@@ -60,6 +60,16 @@ export function EditorCarregado() {
     [id],
   );
 
+  const simular = useCallback(
+    async (corpo: { acao: string; texto?: string }) => {
+      const supabase = createClient();
+      const { data, error } = await supabase.functions.invoke("motor/simular", { body: { funil_id: id, ...corpo } });
+      if (error) throw error;
+      return data;
+    },
+    [id],
+  );
+
   return (
     <div className="-mx-5 -my-8 h-[calc(100dvh-150px)] min-h-[560px] md:-mx-10 md:h-dvh">
       {estado.fase === "carregando" && <p className="p-8 text-sm text-suave">Carregando funil…</p>}
@@ -71,7 +81,7 @@ export function EditorCarregado() {
           </Link>
         </div>
       )}
-      {estado.fase === "pronto" && <EditorFunil inicial={estado.dados} produtos={estado.produtos} funis={estado.funis} crm={estado.crm} onSalvar={salvar} />}
+      {estado.fase === "pronto" && <EditorFunil inicial={estado.dados} produtos={estado.produtos} funis={estado.funis} crm={estado.crm} onSalvar={salvar} simular={simular} />}
     </div>
   );
 }

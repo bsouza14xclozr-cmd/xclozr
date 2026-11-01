@@ -55,8 +55,8 @@ export function useCrm() {
     const [et, ca, co, pg] = await Promise.all([
       supabase.from("etiquetas").select("id, nome, cor").order("nome"),
       supabase.from("campos_personalizados").select("id, chave, rotulo, tipo").order("criado_em"),
-      supabase.from("contatos").select(CAMPOS_CONTATO).order("ultima_msg_em", { ascending: false, nullsFirst: false }).limit(1000),
-      supabase.from("pagamentos").select("contato_id, valor_centavos, status"),
+      supabase.from("contatos").select(CAMPOS_CONTATO).eq("simulacao", false).order("ultima_msg_em", { ascending: false, nullsFirst: false }).limit(1000),
+      supabase.from("pagamentos").select("contato_id, valor_centavos, status").eq("simulacao", false),
     ]);
     if (col.error || co.error) {
       setErro("Não consegui carregar o CRM.");
@@ -90,7 +90,8 @@ export function useCrm() {
           setContatos((cs) => cs.filter((c) => c.id !== id));
           return;
         }
-        const linha = payload.new as LinhaContato;
+        const linha = payload.new as LinhaContato & { simulacao?: boolean };
+        if (linha.simulacao) return;
         setContatos((cs) => {
           const antigo = cs.find((c) => c.id === linha.id);
           const novo = montar(linha, pagosRef.current, pendentesRef.current);

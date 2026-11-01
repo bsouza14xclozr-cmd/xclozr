@@ -22,6 +22,7 @@ import { BLOCOS, GRUPOS, blocoDe, type Config, type TipoBloco } from "@/lib/funi
 import { criarNo, limparLigacoes, novoId, paraSalvar, type Grafo, type NoBloco } from "@/lib/funil/grafo";
 import { BlocoNode, IconeBloco } from "./BlocoNode";
 import { OpcoesCrmContext, PainelConfig, type Opcao, type OpcoesCrm } from "./PainelConfig";
+import { Simulador, type ChamarSimulador } from "./Simulador";
 
 const nodeTypes: NodeTypes = { bloco: BlocoNode };
 const TIPO_ARRASTE = "application/xclozr-bloco";
@@ -34,6 +35,7 @@ type Props = {
   funis: Opcao[];
   crm?: OpcoesCrm;
   onSalvar: (dados: DadosFunil) => Promise<void>;
+  simular?: ChamarSimulador;
 };
 
 function Paleta({ onAdicionar }: { onAdicionar: (tipo: TipoBloco) => void }) {
@@ -76,7 +78,9 @@ function Paleta({ onAdicionar }: { onAdicionar: (tipo: TipoBloco) => void }) {
   );
 }
 
-function EditorInterno({ inicial, produtos, funis, onSalvar }: Omit<Props, "crm">) {
+function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Props, "crm">) {
+  const [testando, setTestando] = useState(false);
+  const [blocoTeste, setBlocoTeste] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<NoBloco>(inicial.grafo.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(inicial.grafo.edges);
   const [nome, setNome] = useState(inicial.nome);
@@ -178,6 +182,12 @@ function EditorInterno({ inicial, produtos, funis, onSalvar }: Omit<Props, "crm"
     [setEdges],
   );
 
+  // no teste, destaca o bloco onde a conversa está
+  const nodesExibidos = useMemo(
+    () => (testando && blocoTeste ? nodes.map((n) => (n.id === blocoTeste ? { ...n, className: "rounded-xl ring-4 ring-azul/70" } : n)) : nodes),
+    [nodes, testando, blocoTeste],
+  );
+
   // setas com a cor da saída de onde partem
   const edgesColoridas = useMemo(() => {
     const cores = new Map<string, string>();
@@ -241,6 +251,21 @@ function EditorInterno({ inicial, produtos, funis, onSalvar }: Omit<Props, "crm"
         <span className={`text-xs ${corStatus}`} role="status">
           {textoStatus}
         </span>
+        {simular && (
+          <button
+            type="button"
+            aria-pressed={testando}
+            onClick={() => {
+              setTestando((t) => !t);
+              setSelecionado(null);
+            }}
+            className={`flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${
+              testando ? "border-azul/60 bg-[#0f1d2e] text-azul" : "border-borda bg-cartao text-texto hover:bg-elevado"
+            }`}
+          >
+            ▶ Testar funil
+          </button>
+        )}
         <button
           type="button"
           aria-pressed={ativo}
@@ -259,13 +284,13 @@ function EditorInterno({ inicial, produtos, funis, onSalvar }: Omit<Props, "crm"
 
         <div ref={quadro} className="relative min-h-[420px] flex-1" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           <ReactFlow<NoBloco, Edge>
-            nodes={nodes}
+            nodes={nodesExibidos}
             edges={edgesColoridas}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onNodeClick={(_, n) => setSelecionado(n.id)}
+            onNodeClick={(_, n) => !testando && setSelecionado(n.id)}
             onPaneClick={() => setSelecionado(null)}
             onNodesDelete={(ns) => ns.some((n) => n.id === selecionado) && setSelecionado(null)}
             colorMode="dark"
@@ -283,7 +308,22 @@ function EditorInterno({ inicial, produtos, funis, onSalvar }: Omit<Props, "crm"
           </ReactFlow>
         </div>
 
-        {noSelecionado && (
+        {testando && simular && (
+          <div className="h-[70vh] md:h-auto">
+            <Simulador
+              chamar={simular}
+              nodes={nodes}
+              podeTestar={status === "salvo"}
+              onBlocoAtual={setBlocoTeste}
+              onFechar={() => {
+                setTestando(false);
+                setBlocoTeste(null);
+              }}
+            />
+          </div>
+        )}
+
+        {!testando && noSelecionado && (
           <div className="max-h-[70vh] md:max-h-none">
             <PainelConfig
               key={noSelecionado.id}
