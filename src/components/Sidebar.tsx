@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { sair } from "@/app/login/actions";
+import { Sininho } from "./Sininho";
 
 type Item = { href: string; label: string; icon: ReactNode };
 
@@ -129,8 +130,9 @@ export function Sidebar({ email }: { email: string | null }) {
       aria-label="Menu principal"
       className="flex w-full flex-col gap-1 border-b border-borda bg-lateral p-4 md:min-h-screen md:w-60 md:shrink-0 md:border-r md:border-b-0 md:px-4 md:py-6"
     >
-      <div className="px-3 pb-4 md:pb-6">
+      <div className="flex items-center justify-between gap-2 pr-1 pb-4 pl-3 md:pb-6">
         <Image src="/xclozr-logo.png" alt="XClozr" width={667} height={245} priority className="h-11 w-auto" />
+        {email && <Sininho />}
       </div>
 
       <Suspense fallback={<Links pathname={null} />}>

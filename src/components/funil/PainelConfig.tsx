@@ -13,6 +13,7 @@ import {
   type Regra,
 } from "@/lib/funil/blocos";
 import type { NoBloco } from "@/lib/funil/grafo";
+import type { Problema } from "@/lib/funil/validar";
 import { createContext, useContext, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { IconeBloco } from "./BlocoNode";
@@ -633,6 +634,7 @@ export function PainelConfig({
   onFechar,
   produtos,
   funis,
+  problemas = [],
 }: {
   no: NoBloco;
   onChange: (config: Config) => void;
@@ -641,6 +643,7 @@ export function PainelConfig({
   onFechar: () => void;
   produtos: Opcao[];
   funis: Opcao[];
+  problemas?: Problema[];
 }) {
   const def = blocoDe(no.data.tipo);
   const config = no.data.config;
@@ -663,6 +666,16 @@ export function PainelConfig({
       </div>
 
       <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
+        {problemas.length > 0 && (
+          <ul className="flex flex-col gap-1.5 rounded-xl border border-borda bg-fundo p-3 text-xs" aria-label="Problemas deste bloco">
+            {problemas.map((x, i) => (
+              <li key={i} className={`flex gap-2 ${x.nivel === "grave" ? "text-vermelho" : "text-laranja"}`}>
+                <span aria-hidden>{x.nivel === "grave" ? "⛔" : "⚠️"}</span>
+                <span>{x.texto}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         {inicio ? (
           <p className="text-sm text-suave">
             O funil começa aqui. Ligue a saída “Começar” ao primeiro bloco (normalmente uma Mensagem de boas-vindas).

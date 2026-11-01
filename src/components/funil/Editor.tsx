@@ -22,6 +22,7 @@ import { BLOCOS, GRUPOS, blocoDe, type Config, type TipoBloco } from "@/lib/funi
 import { criarNo, limparLigacoes, novoId, paraSalvar, type Grafo, type NoBloco } from "@/lib/funil/grafo";
 import { BlocoNode, IconeBloco } from "./BlocoNode";
 import { OpcoesCrmContext, PainelConfig, type Opcao, type OpcoesCrm } from "./PainelConfig";
+import { validarFunil, type Problema } from "@/lib/funil/validar";
 import { Simulador, type ChamarSimulador } from "./Simulador";
 
 const nodeTypes: NodeTypes = { bloco: BlocoNode };
@@ -87,7 +88,9 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
   const [ativo, setAtivo] = useState(inicial.ativo);
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [status, setStatus] = useState<"salvo" | "pendente" | "salvando" | "erro">("salvo");
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
+  const [verProblemas, setVerProblemas] = useState(false);
+  const [pedindoAtivar, setPedindoAtivar] = useState(false);
   const quadro = useRef<HTMLDivElement>(null);
 
   // ---------- salvamento automático ----------
@@ -182,10 +185,26 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
     [setEdges],
   );
 
+  // ---------- checagem do funil ----------
+  const problemas = useMemo(() => validarFunil(nodes, edges, produtos, funis), [nodes, edges, produtos, funis]);
+  const graves = problemas.filter((x) => x.nivel === "grave");
+  const porBloco = useMemo(() => {
+    const m = new Map<string, Problema["nivel"]>();
+    for (const x of problemas) if (m.get(x.blocoId) !== "grave") m.set(x.blocoId, x.nivel);
+    return m;
+  }, [problemas]);
+
   // no teste, destaca o bloco onde a conversa está
   const nodesExibidos = useMemo(
-    () => (testando && blocoTeste ? nodes.map((n) => (n.id === blocoTeste ? { ...n, className: "rounded-xl ring-4 ring-azul/70" } : n)) : nodes),
-    [nodes, testando, blocoTeste],
+    () =>
+      nodes.map((n) => {
+        if (testando && n.id === blocoTeste) return { ...n, className: "rounded-xl ring-4 ring-azul/70" };
+        const nivel = porBloco.get(n.id);
+        if (nivel === "grave") return { ...n, className: "rounded-xl ring-2 ring-vermelho/80" };
+        if (nivel === "aviso") return { ...n, className: "rounded-xl ring-2 ring-laranja/50" };
+        return n;
+      }),
+    [nodes, testando, blocoTeste, porBloco],
   );
 
   // setas com a cor da saída de onde partem
@@ -194,6 +213,25 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
     for (const n of nodes) for (const s of blocoDe(n.data.tipo).saidas(n.data.config)) cores.set(`${n.id}:${s.id}`, s.cor ?? "#5ed98c");
     return edges.map((e) => ({ ...e, style: { strokeWidth: 2, stroke: cores.get(`${e.source}:${e.sourceHandle}`) ?? "#5ed98c" } }));
   }, [nodes, edges]);
+
+  const irParaBloco = useCallback(
+    (id: string) => {
+      setTestando(false);
+      setSelecionado(id);
+      setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === id })));
+      void fitView({ nodes: [{ id }], maxZoom: 1.1, duration: 400, padding: 0.6 });
+    },
+    [fitView, setNodes],
+  );
+
+  const alternarAtivo = () => {
+    if (!ativo && graves.length > 0) {
+      setPedindoAtivar(true);
+      setVerProblemas(true);
+      return;
+    }
+    setAtivo((a) => !a);
+  };
 
   // ---------- painel ----------
   const noSelecionado = nodes.find((n) => n.id === selecionado) ?? null;
@@ -251,6 +289,71 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
         <span className={`text-xs ${corStatus}`} role="status">
           {textoStatus}
         </span>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setVerProblemas((v) => !v);
+              setPedindoAtivar(false);
+            }}
+            aria-expanded={verProblemas}
+            className={`flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${
+              graves.length
+                ? "border-vermelho/60 bg-[#2a1215] text-vermelho"
+                : problemas.length
+                  ? "border-[#5a4220] bg-[#241b0e] text-laranja"
+                  : "border-limao/40 bg-limao-escuro text-limao"
+            }`}
+          >
+            {graves.length ? `⛔ ${graves.length} problema${graves.length > 1 ? "s" : ""}` : problemas.length ? `⚠ ${problemas.length} aviso${problemas.length > 1 ? "s" : ""}` : "✓ Funil ok"}
+          </button>
+          {verProblemas && (
+            <div className="absolute top-full right-0 z-50 mt-2 flex max-h-[60vh] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-borda bg-cartao shadow-2xl">
+              <div className="flex items-center justify-between border-b border-borda px-4 py-3">
+                <span className="text-sm font-semibold">Checagem do funil</span>
+                <button type="button" onClick={() => setVerProblemas(false)} className="text-xs text-suave hover:text-texto" aria-label="Fechar">
+                  ✕
+                </button>
+              </div>
+              {pedindoAtivar && (
+                <div className="flex flex-col gap-2 border-b border-borda bg-[#2a1215] px-4 py-3 text-sm">
+                  <span>
+                    Esse funil tem {graves.length} problema{graves.length > 1 ? "s" : ""} que <b>travam a conversa</b>. Corrija antes de ativar.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAtivo(true);
+                      setPedindoAtivar(false);
+                      setVerProblemas(false);
+                    }}
+                    className="self-start text-xs text-suave underline hover:text-texto"
+                  >
+                    Ativar mesmo assim
+                  </button>
+                </div>
+              )}
+              <ul className="flex-1 overflow-y-auto">
+                {problemas.length === 0 && <li className="px-4 py-6 text-center text-sm text-suave">Tudo certo! Nenhum problema encontrado.</li>}
+                {[...graves, ...problemas.filter((x) => x.nivel === "aviso")].map((x, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        irParaBloco(x.blocoId);
+                        setVerProblemas(false);
+                      }}
+                      className="flex w-full gap-3 border-b border-borda/60 px-4 py-3 text-left text-sm hover:bg-elevado"
+                    >
+                      <span aria-hidden>{x.nivel === "grave" ? "⛔" : "⚠️"}</span>
+                      <span className={x.nivel === "grave" ? "text-texto" : "text-suave"}>{x.texto}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
         {simular && (
           <button
             type="button"
@@ -269,7 +372,7 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
         <button
           type="button"
           aria-pressed={ativo}
-          onClick={() => setAtivo((a) => !a)}
+          onClick={alternarAtivo}
           className={`flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${
             ativo ? "border-limao/50 bg-limao-escuro text-limao" : "border-borda bg-cartao text-suave"
           }`}
@@ -330,6 +433,7 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
               no={noSelecionado}
               produtos={produtos}
               funis={funis}
+              problemas={problemas.filter((x) => x.blocoId === noSelecionado.id)}
               onChange={(c) => atualizarConfig(noSelecionado.id, c)}
               onApagar={() => apagar(noSelecionado.id)}
               onDuplicar={() => duplicar(noSelecionado.id)}
