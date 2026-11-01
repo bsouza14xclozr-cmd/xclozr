@@ -54,7 +54,8 @@ Nunca coloque a chave `service_role` no painel nem no GitHub.
 - [x] Supabase — login e tabelas
 - [ ] Fase 1 — conectar números pelo QR code (Evolution API)
 - [ ] Fase 2 — conversas
-- [ ] Fase 3 — funil sem IA
+- [x] Fase 3a — editor visual de funil (blocos, ligações, salvamento automático)
+- [ ] Fase 3b — motor que executa o funil no WhatsApp (VPS)
 - [ ] Fase 4 — Pix, entrega, upsell, recuperação
 - [ ] Fase 5 — rastreio de anúncios e métricas de lucro
 - [ ] Fase 6 — regras automáticas de anúncios

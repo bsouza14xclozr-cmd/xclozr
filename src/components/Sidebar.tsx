@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { sair } from "@/app/login/actions";
 
 type Item = { href: string; label: string; icon: ReactNode };
@@ -81,9 +81,38 @@ const itens: Item[] = [
   },
 ];
 
-export function Sidebar({ email }: { email: string | null }) {
-  const pathname = usePathname();
+function Links({ pathname }: { pathname: string | null }) {
+  return (
+    <div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+      {itens.map((item) => {
+        const ativo = pathname !== null && (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={ativo ? "page" : undefined}
+            className={`flex min-h-11 shrink-0 items-center gap-3 rounded-[10px] px-3 text-sm transition-colors ${
+              ativo
+                ? "bg-elevado font-semibold text-texto [&_svg]:text-limao"
+                : "font-medium text-suave hover:bg-elevado/60 hover:text-texto"
+            }`}
+          >
+            {item.icon}
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
 
+/** Lê a URL atual (por isso fica dentro de um Suspense). */
+function LinksComRota() {
+  const pathname = usePathname();
+  return <Links pathname={pathname} />;
+}
+
+export function Sidebar({ email }: { email: string | null }) {
   return (
     <nav
       aria-label="Menu principal"
@@ -93,26 +122,9 @@ export function Sidebar({ email }: { email: string | null }) {
         <Image src="/xclozr-logo.png" alt="XClozr" width={667} height={245} priority className="h-11 w-auto" />
       </div>
 
-      <div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
-        {itens.map((item) => {
-          const ativo = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={ativo ? "page" : undefined}
-              className={`flex min-h-11 shrink-0 items-center gap-3 rounded-[10px] px-3 text-sm transition-colors ${
-                ativo
-                  ? "bg-elevado font-semibold text-texto [&_svg]:text-limao"
-                  : "font-medium text-suave hover:bg-elevado/60 hover:text-texto"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </Link>
-          );
-        })}
-      </div>
+      <Suspense fallback={<Links pathname={null} />}>
+        <LinksComRota />
+      </Suspense>
 
       {email && (
         <div className="mt-2 hidden flex-col gap-2 rounded-xl border border-borda p-3.5 md:mt-auto md:flex">
