@@ -13,9 +13,36 @@ import {
   type Regra,
 } from "@/lib/funil/blocos";
 import type { NoBloco } from "@/lib/funil/grafo";
+import { createContext, useContext } from "react";
 import { IconeBloco } from "./BlocoNode";
 
 export type Opcao = { id: string; nome: string };
+
+/** Opções do CRM para sugerir nos blocos (colunas, etiquetas e campos já criados). */
+export type OpcoesCrm = { colunas: Opcao[]; etiquetas: string[]; campos: { chave: string; rotulo: string }[] };
+export const OpcoesCrmContext = createContext<OpcoesCrm>({ colunas: [], etiquetas: [], campos: [] });
+
+/** Input com sugestões (datalist) de etiquetas ou campos. */
+function InputSugestoes({
+  tipo,
+  ...props
+}: { tipo: "etiquetas" | "campos" } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const crm = useContext(OpcoesCrmContext);
+  const lista = tipo === "etiquetas" ? crm.etiquetas.map((e) => ({ v: e, r: e })) : crm.campos.map((c) => ({ v: c.chave, r: c.rotulo }));
+  const id = `sug-${tipo}`;
+  return (
+    <>
+      <input list={id} {...props} />
+      <datalist id={id}>
+        {lista.map((o) => (
+          <option key={o.v} value={o.v}>
+            {o.r}
+          </option>
+        ))}
+      </datalist>
+    </>
+  );
+}
 
 const inputCls =
   "w-full min-h-10 rounded-[10px] border border-borda bg-fundo px-3 text-sm text-texto placeholder:text-suave/70 focus:border-limao focus:outline-none";
@@ -246,6 +273,23 @@ function ListaObjecoes({ valor, onChange }: { valor: Objecao[]; onChange: (v: Ob
   );
 }
 
+function ColunaSelect({ valor, onChange }: { valor: string; onChange: (v: string) => void }) {
+  const { colunas } = useContext(OpcoesCrmContext);
+  return (
+    <>
+      <select aria-label="Coluna do Kanban" className={inputCls} value={valor} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Selecione a coluna…</option>
+        {colunas.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.nome}
+          </option>
+        ))}
+      </select>
+      {colunas.length === 0 && <span className="text-[11px] text-laranja">Abra o CRM uma vez para criar as colunas.</span>}
+    </>
+  );
+}
+
 function ListaAcoes({ valor, onChange }: { valor: Acao[]; onChange: (v: Acao[]) => void }) {
   const set = (i: number, a: Acao) => onChange(valor.map((x, j) => (j === i ? a : x)));
   return (
@@ -266,7 +310,18 @@ function ListaAcoes({ valor, onChange }: { valor: Acao[]; onChange: (v: Acao[]) 
                 <Lixeira />
               </button>
             </div>
-            {def?.pede && <input aria-label={def.pede} className={inputCls} placeholder={def.pede} value={a.valor} onChange={(e) => set(i, { ...a, valor: e.target.value })} />}
+            {def?.pede && a.tipo === "kanban_mover" && (
+              <ColunaSelect valor={a.valor} onChange={(v) => set(i, { ...a, valor: v })} />
+            )}
+            {def?.pede && (a.tipo === "etiqueta_add" || a.tipo === "etiqueta_remover") && (
+              <InputSugestoes tipo="etiquetas" aria-label={def.pede} className={inputCls} placeholder={def.pede} value={a.valor} onChange={(e) => set(i, { ...a, valor: e.target.value })} />
+            )}
+            {def?.pede && (a.tipo === "campo_definir" || a.tipo === "campo_limpar") && (
+              <InputSugestoes tipo="campos" aria-label={def.pede} className={inputCls} placeholder={def.pede} value={a.valor} onChange={(e) => set(i, { ...a, valor: e.target.value })} />
+            )}
+            {def?.pede && ["pausar_robo", "notificar"].includes(a.tipo) && (
+              <input aria-label={def.pede} className={inputCls} placeholder={def.pede} value={a.valor} onChange={(e) => set(i, { ...a, valor: e.target.value })} />
+            )}
             {def?.pede2 && <input aria-label={def.pede2} className={inputCls} placeholder={def.pede2} value={a.valor2 ?? ""} onChange={(e) => set(i, { ...a, valor2: e.target.value })} />}
           </div>
         );
@@ -314,14 +369,17 @@ function ListaRegras({ valor, onChange }: { valor: Regra[]; onChange: (v: Regra[
                 </option>
               ))}
             </select>
-            {!semValor && def.pede && (
+            {!semValor && def.pede && (r.tipo === "etiqueta" || r.tipo === "campo") && (
+              <InputSugestoes tipo={r.tipo === "etiqueta" ? "etiquetas" : "campos"} aria-label={def.pede} className={inputCls} placeholder={def.pede} value={r.valor} onChange={(e) => set(i, { ...r, valor: e.target.value })} />
+            )}
+            {!semValor && def.pede && r.tipo !== "etiqueta" && r.tipo !== "campo" && (
               <input aria-label={def.pede} className={inputCls} placeholder={def.pede} value={r.valor} onChange={(e) => set(i, { ...r, valor: e.target.value })} />
             )}
             {def.pede2 && (r.tipo === "horario" || (r.tipo === "campo" && !semValor)) && (
               <input aria-label={def.pede2} className={inputCls} placeholder={def.pede2} value={r.valor2 ?? ""} onChange={(e) => set(i, { ...r, valor2: e.target.value })} />
             )}
             {r.tipo === "campo" && semValor && (
-              <input aria-label="Campo" className={inputCls} placeholder="Campo" value={r.valor} onChange={(e) => set(i, { ...r, valor: e.target.value })} />
+              <InputSugestoes tipo="campos" aria-label="Campo" className={inputCls} placeholder="Campo" value={r.valor} onChange={(e) => set(i, { ...r, valor: e.target.value })} />
             )}
           </div>
         );
@@ -359,7 +417,11 @@ function CampoForm({
       return (
         <div className="flex flex-col gap-1.5">
           <Rotulo id={id} texto={campo.rotulo} dica={dica} />
-          <input id={id} className={inputCls} placeholder={campo.placeholder} value={(v as string) ?? ""} onChange={(e) => set(campo.chave, e.target.value)} />
+          {campo.chave === "salvarEm" ? (
+            <InputSugestoes tipo="campos" id={id} className={inputCls} placeholder={campo.placeholder} value={(v as string) ?? ""} onChange={(e) => set(campo.chave, e.target.value)} />
+          ) : (
+            <input id={id} className={inputCls} placeholder={campo.placeholder} value={(v as string) ?? ""} onChange={(e) => set(campo.chave, e.target.value)} />
+          )}
         </div>
       );
     case "textarea":

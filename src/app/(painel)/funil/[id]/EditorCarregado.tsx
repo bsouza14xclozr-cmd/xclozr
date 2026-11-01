@@ -4,14 +4,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { EditorFunil, type DadosFunil } from "@/components/funil/Editor";
-import type { Opcao } from "@/components/funil/PainelConfig";
+import type { Opcao, OpcoesCrm } from "@/components/funil/PainelConfig";
 import { normalizarGrafo } from "@/lib/funil/grafo";
 import { createClient } from "@/lib/supabase/client";
 
 type Estado =
   | { fase: "carregando" }
   | { fase: "erro"; msg: string }
-  | { fase: "pronto"; dados: DadosFunil; produtos: Opcao[]; funis: Opcao[] };
+  | { fase: "pronto"; dados: DadosFunil; produtos: Opcao[]; funis: Opcao[]; crm: OpcoesCrm };
 
 export function EditorCarregado() {
   const { id } = useParams<{ id: string }>();
@@ -21,10 +21,13 @@ export function EditorCarregado() {
     let cancelado = false;
     (async () => {
       const supabase = createClient();
-      const [funil, produtos, outros] = await Promise.all([
+      const [funil, produtos, outros, colunas, etiquetas, campos] = await Promise.all([
         supabase.from("funis").select("nome, ativo, grafo").eq("id", id).single(),
         supabase.from("produtos").select("id, nome").eq("ativo", true).order("nome"),
         supabase.from("funis").select("id, nome").neq("id", id).order("nome"),
+        supabase.from("kanban_colunas").select("id, nome").order("ordem"),
+        supabase.from("etiquetas").select("nome").order("nome"),
+        supabase.from("campos_personalizados").select("chave, rotulo").order("criado_em"),
       ]);
       if (cancelado) return;
       if (funil.error || !funil.data) {
@@ -36,6 +39,11 @@ export function EditorCarregado() {
         dados: { nome: funil.data.nome, ativo: funil.data.ativo, grafo: normalizarGrafo(funil.data.grafo) },
         produtos: (produtos.data ?? []) as Opcao[],
         funis: (outros.data ?? []) as Opcao[],
+        crm: {
+          colunas: (colunas.data ?? []) as Opcao[],
+          etiquetas: (etiquetas.data ?? []).map((e) => e.nome as string),
+          campos: (campos.data ?? []) as { chave: string; rotulo: string }[],
+        },
       });
     })();
     return () => {
@@ -63,7 +71,7 @@ export function EditorCarregado() {
           </Link>
         </div>
       )}
-      {estado.fase === "pronto" && <EditorFunil inicial={estado.dados} produtos={estado.produtos} funis={estado.funis} onSalvar={salvar} />}
+      {estado.fase === "pronto" && <EditorFunil inicial={estado.dados} produtos={estado.produtos} funis={estado.funis} crm={estado.crm} onSalvar={salvar} />}
     </div>
   );
 }

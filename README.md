@@ -56,7 +56,9 @@ Nunca coloque a chave `service_role` no painel nem no GitHub.
 - [ ] Fase 2 — conversas
 - [x] Fase 3a — editor visual de funil (blocos, ligações, salvamento automático)
 - [ ] Fase 3b — motor que executa o funil no WhatsApp (VPS)
-- [ ] Fase 4 — Pix, entrega, upsell, recuperação
+- [x] Produtos e taxas do gateway
+- [x] CRM — Kanban ao vivo, etiquetas, campos, ficha do contato
+- [ ] Fase 4 — Pix real (Mercado Pago), entrega, upsell, recuperação
 - [ ] Fase 5 — rastreio de anúncios e métricas de lucro
 - [ ] Fase 6 — regras automáticas de anúncios
 - [ ] Fase 7 — IA de reserva (opcional)

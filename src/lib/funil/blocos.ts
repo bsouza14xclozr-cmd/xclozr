@@ -40,6 +40,7 @@ export type TipoAcao =
   | "etiqueta_remover"
   | "campo_definir"
   | "campo_limpar"
+  | "kanban_mover"
   | "pausar_robo"
   | "notificar"
   | "encerrar";
@@ -122,6 +123,7 @@ export const OPCOES_ACAO: { valor: TipoAcao; rotulo: string; pede?: string; pede
   { valor: "etiqueta_remover", rotulo: "Remover etiqueta", pede: "Etiqueta" },
   { valor: "campo_definir", rotulo: "Definir campo", pede: "Campo", pede2: "Valor" },
   { valor: "campo_limpar", rotulo: "Limpar campo", pede: "Campo" },
+  { valor: "kanban_mover", rotulo: "Mover no Kanban", pede: "Coluna" },
   { valor: "pausar_robo", rotulo: "Pausar o robô nesta conversa", pede: "Por quantas horas" },
   { valor: "notificar", rotulo: "Me avisar no WhatsApp", pede: "Mensagem do aviso" },
   { valor: "encerrar", rotulo: "Encerrar o funil" },

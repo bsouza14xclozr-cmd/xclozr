@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { BLOCOS, GRUPOS, blocoDe, type Config, type TipoBloco } from "@/lib/funil/blocos";
 import { criarNo, limparLigacoes, novoId, paraSalvar, type Grafo, type NoBloco } from "@/lib/funil/grafo";
 import { BlocoNode, IconeBloco } from "./BlocoNode";
-import { PainelConfig, type Opcao } from "./PainelConfig";
+import { OpcoesCrmContext, PainelConfig, type Opcao, type OpcoesCrm } from "./PainelConfig";
 
 const nodeTypes: NodeTypes = { bloco: BlocoNode };
 const TIPO_ARRASTE = "application/xclozr-bloco";
@@ -32,6 +32,7 @@ type Props = {
   inicial: DadosFunil;
   produtos: Opcao[];
   funis: Opcao[];
+  crm?: OpcoesCrm;
   onSalvar: (dados: DadosFunil) => Promise<void>;
 };
 
@@ -75,7 +76,7 @@ function Paleta({ onAdicionar }: { onAdicionar: (tipo: TipoBloco) => void }) {
   );
 }
 
-function EditorInterno({ inicial, produtos, funis, onSalvar }: Props) {
+function EditorInterno({ inicial, produtos, funis, onSalvar }: Omit<Props, "crm">) {
   const [nodes, setNodes, onNodesChange] = useNodesState<NoBloco>(inicial.grafo.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(inicial.grafo.edges);
   const [nome, setNome] = useState(inicial.nome);
@@ -301,10 +302,12 @@ function EditorInterno({ inicial, produtos, funis, onSalvar }: Props) {
   );
 }
 
-export function EditorFunil(props: Props) {
+export function EditorFunil({ crm, ...props }: Props) {
   return (
-    <ReactFlowProvider>
-      <EditorInterno {...props} />
-    </ReactFlowProvider>
+    <OpcoesCrmContext.Provider value={crm ?? { colunas: [], etiquetas: [], campos: [] }}>
+      <ReactFlowProvider>
+        <EditorInterno {...props} />
+      </ReactFlowProvider>
+    </OpcoesCrmContext.Provider>
   );
 }
