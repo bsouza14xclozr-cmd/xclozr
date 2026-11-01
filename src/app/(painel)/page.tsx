@@ -18,6 +18,22 @@ export default function VisaoGeralPage() {
         <Stat label="CPA (custo por venda)" value="—" />
       </div>
 
+      <section aria-labelledby="atendimento" className="flex flex-col gap-3">
+        <h2 id="atendimento" className="text-base font-semibold">
+          Atendimento
+        </h2>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+          <Stat label="Total de contatos" value="0" hint="no período" />
+          <Stat label="Conversas ativas hoje" value="0" hint="em tempo real" />
+          <Stat label="Taxa de resposta" value="0%" hint="responderam a 1ª mensagem" />
+          <Stat label="Tempo médio de resposta" value="0s" hint="do robô ao cliente" />
+          <Stat label="Mensagens enviadas" value="0" hint="robô + humano" />
+          <Stat label="Mensagens recebidas" value="0" hint="dos clientes" />
+          <Stat label="Ticket médio" value="R$ 0,00" hint="por venda paga" />
+          <Stat label="Atendimentos concluídos" value="0" hint="venda paga e entregue" />
+        </div>
+      </section>
+
       <div className="flex flex-wrap gap-4">
         <Card title="Funil de vendas" className="min-w-0 flex-[1_1_420px]">
           <ul className="flex flex-col gap-4">
