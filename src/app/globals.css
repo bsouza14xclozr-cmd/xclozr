@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Tema XClozr — escuro com destaque verde-limão (mesmo da prévia) */
+@theme {
+  --color-fundo: #0c0e12;
+  --color-lateral: #101318;
+  --color-cartao: #14171d;
+  --color-elevado: #1b1f27;
+  --color-borda: #262b35;
+  --color-texto: #edeff2;
+  --color-suave: #a3aab6;
+  --color-limao: #b8f34a;
+  --color-limao-escuro: #1b2410;
+  --color-azul: #6cb4ff;
+  --color-laranja: #ffb04a;
+  --color-vermelho: #ff8a8a;
+
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-titulo: "Space Grotesk", system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-fundo);
+  color: var(--color-texto);
+}

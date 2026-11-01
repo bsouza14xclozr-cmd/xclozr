@@ -1,0 +1,119 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+
+type Item = { href: string; label: string; icon: ReactNode };
+
+const iconProps = {
+  width: 18,
+  height: 18,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  "aria-hidden": true,
+} as const;
+
+const itens: Item[] = [
+  {
+    href: "/",
+    label: "Visão geral",
+    icon: (
+      <svg {...iconProps}>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </svg>
+    ),
+  },
+  {
+    href: "/numeros",
+    label: "Números",
+    icon: (
+      <svg {...iconProps}>
+        <rect x="6" y="2" width="12" height="20" rx="2.5" />
+        <path d="M11 18h2" />
+      </svg>
+    ),
+  },
+  {
+    href: "/conversas",
+    label: "Conversas",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+      </svg>
+    ),
+  },
+  {
+    href: "/funil",
+    label: "Funil",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M3 4h18l-7 9v6l-4 2v-8z" />
+      </svg>
+    ),
+  },
+  {
+    href: "/produtos",
+    label: "Produtos e Pix",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M21 8l-9-5-9 5 9 5 9-5z" />
+        <path d="M3 8v8l9 5 9-5V8" />
+      </svg>
+    ),
+  },
+  {
+    href: "/anuncios",
+    label: "Anúncios",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z" />
+        <path d="M17 8a5 5 0 0 1 0 8" />
+      </svg>
+    ),
+  },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      aria-label="Menu principal"
+      className="flex w-full flex-col gap-1 border-b border-borda bg-lateral p-4 md:min-h-screen md:w-60 md:shrink-0 md:border-r md:border-b-0 md:px-4 md:py-6"
+    >
+      <div className="flex items-center gap-2.5 px-3 pb-4 md:pb-6">
+        <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] bg-limao font-titulo text-xl font-bold text-fundo">
+          X
+        </div>
+        <span className="font-titulo text-[21px] font-bold tracking-tight">XClozr</span>
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+        {itens.map((item) => {
+          const ativo = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={ativo ? "page" : undefined}
+              className={`flex min-h-11 shrink-0 items-center gap-3 rounded-[10px] px-3 text-sm transition-colors ${
+                ativo
+                  ? "bg-elevado font-semibold text-texto [&_svg]:text-limao"
+                  : "font-medium text-suave hover:bg-elevado/60 hover:text-texto"
+              }`}
+            >
+              {item.icon}
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
