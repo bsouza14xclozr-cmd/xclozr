@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -88,11 +89,8 @@ export function Sidebar({ email }: { email: string | null }) {
       aria-label="Menu principal"
       className="flex w-full flex-col gap-1 border-b border-borda bg-lateral p-4 md:min-h-screen md:w-60 md:shrink-0 md:border-r md:border-b-0 md:px-4 md:py-6"
     >
-      <div className="flex items-center gap-2.5 px-3 pb-4 md:pb-6">
-        <div className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] bg-limao font-titulo text-xl font-bold text-fundo">
-          X
-        </div>
-        <span className="font-titulo text-[21px] font-bold tracking-tight">XClozr</span>
+      <div className="px-3 pb-4 md:pb-6">
+        <Image src="/xclozr-logo.png" alt="XClozr" width={667} height={245} priority className="h-11 w-auto" />
       </div>
 
       <div className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">

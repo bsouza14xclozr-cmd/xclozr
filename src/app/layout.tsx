@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     default: "XClozr",
     template: "%s · XClozr",
   },
-  description: "Painel de vendas X1 no WhatsApp",
+  description: "Assistente de Vendas & Anúncios",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
