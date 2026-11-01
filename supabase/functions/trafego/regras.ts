@@ -20,6 +20,8 @@ export type Linha = {
   vendas: number;
   faturamento: number;
   lucro: number;
+  imposto_meta?: number;
+  upsells?: number;
 };
 
 export type TrafegoCfg = {
@@ -89,6 +91,8 @@ export async function relatorioDe(db: SupabaseClient, donoId: string, nivel: Niv
     vendas: Number(l.vendas),
     faturamento: Number(l.faturamento),
     lucro: Number(l.lucro),
+    imposto_meta: Number(l.imposto_meta ?? 0),
+    upsells: Number(l.upsells ?? 0),
   }));
 }
 
@@ -106,6 +110,11 @@ export function metricas(l: Linha): Record<string, number | null> {
     faturamento: l.faturamento,
     lucro: l.lucro,
     roas: d(l.faturamento, l.gasto),
+    roi: d(l.lucro * 100, l.gasto + (l.imposto_meta ?? 0)),
+    margem: d(l.lucro * 100, l.faturamento),
+    custo_pix: d(l.gasto, l.pix_gerados),
+    ticket: d(l.faturamento, l.vendas),
+    upsells: l.upsells ?? 0,
     cpa: d(l.gasto, l.vendas),
     custo_conversa: d(l.gasto, contatosOuConversas),
     taxa_pix: d(l.pix_gerados * 100, l.contatos),

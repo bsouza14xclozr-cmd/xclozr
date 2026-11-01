@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, PageHeader } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
 import { AbaAgente, AbaRegras } from "./RegrasAgente";
+import { POR_ID, PersonalizarColunas, somaDe, somar, useColunas } from "./colunas";
 import { PERIODOS, chamarTrafego, intervaloDias, relatorio, type Linha, type Nivel, type Periodo, type StatusMeta } from "./api";
 
 const inputCls =
@@ -15,11 +16,6 @@ const ABAS: { v: Nivel; nome: string }[] = [
   { v: "anuncio", nome: "Anúncios" },
 ];
 
-const n = (v: number) => v.toLocaleString("pt-BR");
-const div = (a: number, b: number) => (b > 0 ? a / b : null);
-const fmtRoas = (v: number | null) => (v === null ? "—" : `${v.toFixed(2).replace(".", ",")}x`);
-const fmtBrl = (v: number | null) => (v === null ? "—" : brl(Math.round(v)));
-const fmtPct = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(2).replace(".", ",")}%`);
 
 function quando(iso: string | null) {
   if (!iso) return "nunca";
@@ -279,6 +275,9 @@ const ABAS_PAGINA: { v: Aba; nome: string }[] = [
 
 export function AnunciosCliente() {
   const [aba, setAba] = useState<Aba>("relatorio");
+  const { ids: colunasIds, salvar: salvarColunas } = useColunas();
+  const [personalizar, setPersonalizar] = useState(false);
+  const [ordem, setOrdem] = useState<{ id: string; asc: boolean } | null>(null);
   const [status, setStatus] = useState<StatusMeta | null>(null);
   const [config, setConfig] = useState(false);
   const [nivel, setNivel] = useState<Nivel>("campanha");
@@ -381,24 +380,25 @@ export function AnunciosCliente() {
     );
   }, [linhas, busca, soAtivos, filtroPai]);
 
-  const total = useMemo(
-    () =>
-      visiveis.reduce(
-        (a, l) => ({
-          gasto: a.gasto + l.gasto,
-          impressoes: a.impressoes + l.impressoes,
-          cliques: a.cliques + l.cliques,
-          conversas: a.conversas + l.conversas_meta,
-          contatos: a.contatos + l.contatos,
-          pix: a.pix + l.pix_gerados,
-          vendas: a.vendas + l.vendas,
-          faturamento: a.faturamento + l.faturamento,
-          lucro: a.lucro + l.lucro,
-        }),
-        { gasto: 0, impressoes: 0, cliques: 0, conversas: 0, contatos: 0, pix: 0, vendas: 0, faturamento: 0, lucro: 0 },
-      ),
-    [visiveis],
-  );
+  const total = useMemo(() => somar(visiveis), [visiveis]);
+  const cols = useMemo(() => colunasIds.map((id) => POR_ID.get(id)).filter((c): c is NonNullable<typeof c> => Boolean(c)), [colunasIds]);
+  const ordenadas = useMemo(() => {
+    if (!ordem) return visiveis;
+    const c = POR_ID.get(ordem.id);
+    if (!c) return visiveis;
+    return [...visiveis].sort((x, y) => {
+      const a = c.valor(somaDe(x));
+      const b = c.valor(somaDe(y));
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return ordem.asc ? a - b : b - a;
+    });
+  }, [visiveis, ordem]);
+
+  function ordenar(id: string) {
+    setOrdem((o) => (o?.id !== id ? { id, asc: false } : o.asc ? null : { id, asc: true }));
+  }
 
   function abrir(l: Linha) {
     if (nivel === "campanha") {
@@ -530,7 +530,11 @@ export function AnunciosCliente() {
               <input type="checkbox" className="accent-[#5ed98c]" checked={soAtivos} onChange={(e) => setSoAtivos(e.target.checked)} />
               Só ativos
             </label>
+            <button type="button" onClick={() => setPersonalizar(true)} className="ml-auto min-h-11 rounded-[10px] border border-borda bg-fundo px-4 text-sm hover:bg-elevado">
+              ▦ Colunas
+            </button>
           </div>
+          {personalizar && <PersonalizarColunas ids={colunasIds} onSalvar={(ids) => void salvarColunas(ids)} onFechar={() => setPersonalizar(false)} />}
 
           {filtroPai && (
             <div className="flex items-center gap-2 text-sm">
@@ -543,30 +547,23 @@ export function AnunciosCliente() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1400px] whitespace-nowrap text-sm">
+            <table className="w-full whitespace-nowrap text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-suave">
                   <th className="py-2 pr-2 font-medium">Status</th>
                   <th className="py-2 pr-4 font-medium">{ABAS.find((a) => a.v === nivel)?.nome.slice(0, -1)}</th>
-                  <th className="py-2 pr-3 font-medium">Orçamento</th>
-                  <th className="py-2 pr-3 text-right font-medium">Gasto</th>
-                  <th className="py-2 pr-3 text-right font-medium" title="Conversas iniciadas segundo o Meta">
-                    Conversas
-                  </th>
-                  <th className="py-2 pr-3 text-right font-medium" title="Contatos que o robô recebeu vindos deste anúncio">
-                    Contatos
-                  </th>
-                  <th className="py-2 pr-3 text-right font-medium">Pix</th>
-                  <th className="py-2 pr-3 text-right font-medium">Vendas</th>
-                  <th className="py-2 pr-3 text-right font-medium">Faturamento</th>
-                  <th className="py-2 pr-3 text-right font-medium">Lucro</th>
-                  <th className="py-2 pr-3 text-right font-medium">ROAS</th>
-                  <th className="py-2 pr-3 text-right font-medium">CPA</th>
-                  <th className="py-2 pr-3 text-right font-medium">Custo/conversa</th>
-                  <th className="py-2 pr-3 text-right font-medium">Conv. venda</th>
-                  <th className="py-2 pr-3 text-right font-medium">CTR</th>
-                  <th className="py-2 pr-3 text-right font-medium">CPC</th>
-                  <th className="py-2 text-right font-medium">CPM</th>
+                  {cols.map((c) => (
+                    <th key={c.id} className={`py-2 pr-3 font-medium ${c.id === "orcamento" ? "" : "text-right"}`} title={c.desc} aria-sort={ordem?.id === c.id ? (ordem.asc ? "ascending" : "descending") : undefined}>
+                      {c.id === "orcamento" ? (
+                        c.nome
+                      ) : (
+                        <button type="button" onClick={() => ordenar(c.id)} className="uppercase hover:text-texto">
+                          {c.nome}
+                          {ordem?.id === c.id ? (ordem.asc ? " ↑" : " ↓") : ""}
+                        </button>
+                      )}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-borda">
@@ -575,39 +572,33 @@ export function AnunciosCliente() {
                   <td className="py-2.5 pr-4">
                     {visiveis.length} {ABAS.find((a) => a.v === nivel)?.nome.toLowerCase()}
                   </td>
-                  <td />
-                  <td className="py-2.5 pr-3 text-right">{brl(total.gasto)}</td>
-                  <td className="py-2.5 pr-3 text-right">{n(total.conversas)}</td>
-                  <td className="py-2.5 pr-3 text-right">{n(total.contatos)}</td>
-                  <td className="py-2.5 pr-3 text-right">{n(total.pix)}</td>
-                  <td className="py-2.5 pr-3 text-right">{n(total.vendas)}</td>
-                  <td className="py-2.5 pr-3 text-right">{brl(total.faturamento)}</td>
-                  <td className={`py-2.5 pr-3 text-right ${total.lucro > 0 ? "text-limao" : total.lucro < 0 ? "text-vermelho" : ""}`}>{brl(total.lucro)}</td>
-                  <td className="py-2.5 pr-3 text-right">{fmtRoas(div(total.faturamento, total.gasto))}</td>
-                  <td className="py-2.5 pr-3 text-right">{fmtBrl(div(total.gasto, total.vendas))}</td>
-                  <td className="py-2.5 pr-3 text-right">{fmtBrl(div(total.gasto, total.contatos || total.conversas))}</td>
-                  <td className="py-2.5 pr-3 text-right">{fmtPct(div(total.vendas, total.contatos))}</td>
-                  <td className="py-2.5 pr-3 text-right">{fmtPct(div(total.cliques, total.impressoes))}</td>
-                  <td className="py-2.5 pr-3 text-right">{fmtBrl(div(total.gasto, total.cliques))}</td>
-                  <td className="py-2.5 text-right">{fmtBrl(div(total.gasto * 1000, total.impressoes))}</td>
+                  {cols.map((c) => {
+                    if (c.id === "orcamento") return <td key={c.id} />;
+                    const v = c.valor(total);
+                    return (
+                      <td key={c.id} className={`py-2.5 pr-3 text-right ${c.cor?.(v, total) ?? ""}`}>
+                        {c.texto(v)}
+                      </td>
+                    );
+                  })}
                 </tr>
                 {linhas === null && (
                   <tr>
-                    <td colSpan={17} className="py-6 text-center text-suave">
+                    <td colSpan={cols.length + 2} className="py-6 text-center text-suave">
                       Carregando…
                     </td>
                   </tr>
                 )}
                 {linhas && visiveis.length === 0 && (
                   <tr>
-                    <td colSpan={17} className="py-8 text-center text-suave">
+                    <td colSpan={cols.length + 2} className="py-8 text-center text-suave">
                       Nada por aqui nesse período. Se você acabou de conectar, clique em “Atualizar agora”.
                     </td>
                   </tr>
                 )}
-                {visiveis.map((l) => {
+                {ordenadas.map((l) => {
                   const ativo = l.status === "ACTIVE";
-                  const roas = div(l.faturamento, l.gasto);
+                  const sl = somaDe(l);
                   return (
                     <tr key={l.id} className="hover:bg-elevado/40">
                       <td className="py-2.5 pr-2">
@@ -627,23 +618,20 @@ export function AnunciosCliente() {
                           <span className="text-[11px] text-laranja">{l.status_efetivo.toLowerCase().replaceAll("_", " ")}</span>
                         )}
                       </td>
-                      <td className="py-2.5 pr-3">
-                        <Orcamento linha={l} nivel={nivel} onSalvar={(c) => agir(l, "orcamento", c)} />
-                      </td>
-                      <td className="py-2.5 pr-3 text-right">{brl(l.gasto)}</td>
-                      <td className="py-2.5 pr-3 text-right">{n(l.conversas_meta)}</td>
-                      <td className="py-2.5 pr-3 text-right">{n(l.contatos)}</td>
-                      <td className="py-2.5 pr-3 text-right">{n(l.pix_gerados)}</td>
-                      <td className="py-2.5 pr-3 text-right">{n(l.vendas)}</td>
-                      <td className="py-2.5 pr-3 text-right">{brl(l.faturamento)}</td>
-                      <td className={`py-2.5 pr-3 text-right font-semibold ${l.lucro > 0 ? "text-limao" : l.lucro < 0 ? "text-vermelho" : "text-suave"}`}>{brl(l.lucro)}</td>
-                      <td className={`py-2.5 pr-3 text-right ${roas === null ? "" : l.lucro >= 0 ? "text-limao" : "text-vermelho"}`}>{fmtRoas(roas)}</td>
-                      <td className="py-2.5 pr-3 text-right">{fmtBrl(div(l.gasto, l.vendas))}</td>
-                      <td className="py-2.5 pr-3 text-right">{fmtBrl(div(l.gasto, l.contatos || l.conversas_meta))}</td>
-                      <td className="py-2.5 pr-3 text-right">{fmtPct(div(l.vendas, l.contatos))}</td>
-                      <td className="py-2.5 pr-3 text-right">{fmtPct(div(l.cliques, l.impressoes))}</td>
-                      <td className="py-2.5 pr-3 text-right">{fmtBrl(div(l.gasto, l.cliques))}</td>
-                      <td className="py-2.5 text-right">{fmtBrl(div(l.gasto * 1000, l.impressoes))}</td>
+                      {cols.map((c) => {
+                        if (c.id === "orcamento")
+                          return (
+                            <td key={c.id} className="py-2.5 pr-3">
+                              <Orcamento linha={l} nivel={nivel} onSalvar={(v) => agir(l, "orcamento", v)} />
+                            </td>
+                          );
+                        const v = c.valor(sl);
+                        return (
+                          <td key={c.id} className={`py-2.5 pr-3 text-right ${c.cor?.(v, sl) ?? ""}`}>
+                            {c.texto(v)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}

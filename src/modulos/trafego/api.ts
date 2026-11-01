@@ -21,6 +21,12 @@ export type Linha = {
   vendas: number;
   faturamento: number;
   lucro: number;
+  taxas: number;
+  custo_produtos: number;
+  imposto_venda: number;
+  imposto_meta: number;
+  upsells: number;
+  faturamento_upsell: number;
 };
 
 export type StatusMeta = {
@@ -48,10 +54,21 @@ export async function chamarTrafego<T = Record<string, unknown>>(corpo: Record<s
   return data as T;
 }
 
+const NUMERICOS = [
+  "gasto", "impressoes", "cliques", "conversas_meta", "contatos", "pix_gerados", "vendas", "faturamento", "lucro",
+  "taxas", "custo_produtos", "imposto_venda", "imposto_meta", "upsells", "faturamento_upsell",
+] as const;
+
 export async function relatorio(nivel: Nivel, inicio: string, fim: string, conta: string | null) {
   const { data, error } = await createClient().rpc("relatorio_anuncios", { p_nivel: nivel, p_inicio: inicio, p_fim: fim, p_conta: conta });
   if (error) throw error;
-  return (data ?? []) as Linha[];
+  // bigint chega como número ou texto: normaliza tudo para número
+  return ((data ?? []) as Record<string, unknown>[]).map((l) => {
+    const o = { ...l } as Record<string, unknown>;
+    for (const k of NUMERICOS) o[k] = Number(l[k] ?? 0);
+    o.orcamento_diario = l.orcamento_diario == null ? null : Number(l.orcamento_diario);
+    return o as Linha;
+  });
 }
 
 /** Data de hoje em Brasília (AAAA-MM-DD), com deslocamento em dias. */
