@@ -82,6 +82,25 @@ const itens: Item[] = [
     ),
   },
   {
+    href: "/disparos",
+    label: "Disparos",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M22 2 11 13" />
+        <path d="M22 2 15 22l-4-9-9-4z" />
+      </svg>
+    ),
+  },
+  {
+    href: "/ia",
+    label: "Agente de IA",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2L12 3z" />
+      </svg>
+    ),
+  },
+  {
     href: "/anuncios",
     label: "Anúncios",
     icon: (

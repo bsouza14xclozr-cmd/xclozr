@@ -89,7 +89,7 @@ function nomeSeguro(n: string) {
   return ext ? `${base}.${ext.replace(/[^a-z0-9]/g, "")}` : base;
 }
 
-function CampoMidia({
+export function CampoMidia({
   tipo,
   url,
   onChange,

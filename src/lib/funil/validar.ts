@@ -110,7 +110,9 @@ export function validarFunil(nodes: NoBloco[], edges: Edge[], produtos: { id: st
         if (!String(c.url ?? "").startsWith("https://")) add(n.id, "grave", "Integração precisa de uma URL começando com https://");
         break;
       case "ia":
-        add(n.id, "aviso", "O bloco de IA ainda não está ativo: por enquanto segue direto pela saída “Limite”.");
+        if (vazio(c.instrucoes) && vazio(c.conhecimento)) add(n.id, "grave", "Agente IA sem instruções nem informações do produto: a IA não sabe o que vender.");
+        if (!saiDe(n.id, "concluiu")) add(n.id, "aviso", "Agente IA: a saída “Objetivo concluído” não está ligada (normalmente vai para o Pix).");
+        if (!saiDe(n.id, "limite")) add(n.id, "aviso", "Agente IA: a saída “Limite atingido” não está ligada (ex.: chamar humano).");
         break;
     }
   }

@@ -17,7 +17,7 @@ export type Funil = { id: string; grafo: Grafo };
 
 export type Aguardando = {
   bloco: string;
-  tipo: "pergunta" | "menu" | "objecoes" | "upsell" | "esperar";
+  tipo: "pergunta" | "menu" | "objecoes" | "upsell" | "esperar" | "ia";
   token: string;
   tentativas: number;
   cancelaSeResponder?: boolean;
@@ -83,7 +83,8 @@ export interface Envio {
   enviar(c: Contato, s: Saida): Promise<void>;
 }
 
-export type Ctx = { store: Store; envio: Envio; log?: (m: string) => void };
+export type RespostaIA = { resposta: string; concluido: boolean } | { erro: string };
+export type Ctx = { store: Store; envio: Envio; log?: (m: string) => void; ia?: (c: Contato, cfg: Config) => Promise<RespostaIA> };
 
 /* ------------------------------------------------------------------ */
 /* Utilidades                                                          */
@@ -181,6 +182,11 @@ async function enviarTexto(ctx: Ctx, c: Contato, texto: string, esperaMs = 1500)
 /* ------------------------------------------------------------------ */
 /* Execução                                                            */
 /* ------------------------------------------------------------------ */
+
+async function enviarRespostaIA(ctx: Ctx, c: Contato, texto: string, dividir: boolean) {
+  const partes = dividir ? texto.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 4) : [texto.trim()];
+  for (const p of partes) await enviar(ctx, c, { tipo: "texto", texto: p, esperaMs: Math.min(6000, 900 + p.length * 35) });
+}
 
 type Resultado = { saida: string } | { espera: Aguardando } | { parar: true; finalizar?: boolean };
 
@@ -422,9 +428,19 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
       }
     }
 
-    case "ia":
-      // A IA entra numa próxima etapa. Por enquanto segue pela saída "Limite atingido".
-      return { saida: "limite" };
+    case "ia": {
+      if (!ctx.ia) return { saida: "limite" };
+      const r = await ctx.ia(c, cfg);
+      if ("erro" in r) {
+        await ctx.store.avisarDono(c, `${r.erro} O funil seguiu pela saída “Limite”.`);
+        return { saida: "limite" };
+      }
+      await enviarRespostaIA(ctx, c, r.resposta, Boolean(cfg.dividir));
+      if (r.concluido) return { saida: "concluiu" };
+      if (minutos(cfg.maxRespostas, 10) <= 1) return { saida: "limite" };
+      await ctx.store.cancelarAgendamentos(c, ["timeout", "esperar"]);
+      return { espera: { bloco: n.id, tipo: "ia", token: token(), tentativas: 1 } };
+    }
 
     default:
       return { saida: "seguir" };
@@ -583,6 +599,20 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
     case "esperar":
       if (ag.cancelaSeResponder) return seguir("seguir");
       return;
+
+    case "ia": {
+      if (!ctx.ia) return seguir("limite");
+      const r = await ctx.ia(c, cfg);
+      if ("erro" in r) {
+        await ctx.store.avisarDono(c, `${r.erro} O funil seguiu pela saída “Limite”.`);
+        return seguir("limite");
+      }
+      await enviarRespostaIA(ctx, c, r.resposta, Boolean(cfg.dividir));
+      if (r.concluido) return seguir("concluiu");
+      if (ag.tentativas + 1 >= minutos(cfg.maxRespostas, 10)) return seguir("limite");
+      await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
+      return;
+    }
   }
 }
 

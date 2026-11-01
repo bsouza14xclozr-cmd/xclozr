@@ -10,6 +10,8 @@ import * as M from "./motor.ts";
 import { CAMPOS_CONTATO, criarStore, linhaParaContato } from "./store.ts";
 import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
 import { rotasNumeros } from "./numeros.ts";
+import { MODELO_PADRAO, responderIA, testarIA, type Provedor } from "./ia.ts";
+import { ETIQUETA_SAIR, ehPedidoSair, processarDisparos } from "./disparos.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -65,7 +67,40 @@ function ctxPara(donoId: string, simulacao: boolean, cfg: Record<string, string>
     store: criarStore(db, donoId),
     envio: simulacao ? envioSimulado : criarEnvioEvolution(db, cfg),
     log: (m) => console.log(`[motor ${donoId.slice(0, 6)}] ${m}`),
+    ia: (c, cfgBloco) => responderIA(db, donoId, c, cfgBloco),
   };
+}
+
+// Configuração do agente de IA (a chave só entra; nunca volta para o navegador)
+async function rotaIA(req: Request) {
+  const donoId = await usuarioDoJwt(req);
+  if (!donoId) return json({ erro: "não autenticado" }, 401);
+  const corpo = await req.json().catch(() => ({}));
+  const acao = String(corpo.acao ?? "status");
+  const { data: atual } = await db.from("ia_config").select("provedor, modelo, chave").eq("dono_id", donoId).maybeSingle();
+  if (acao === "status") {
+    return json({ configurada: Boolean(atual), provedor: atual?.provedor ?? null, modelo: atual?.modelo ?? null, final_chave: atual?.chave ? atual.chave.slice(-4) : null, padroes: MODELO_PADRAO });
+  }
+  if (acao === "apagar") {
+    await db.from("ia_config").delete().eq("dono_id", donoId);
+    return json({ ok: true });
+  }
+  if (acao === "salvar") {
+    const provedor = String(corpo.provedor ?? "") as Provedor;
+    if (!["openai", "anthropic", "gemini"].includes(provedor)) return json({ erro: "Escolha a IA." }, 400);
+    const modelo = String(corpo.modelo ?? "").trim() || MODELO_PADRAO[provedor];
+    const chave = String(corpo.chave ?? "").trim() || (atual?.provedor === provedor ? atual.chave : "");
+    if (!chave) return json({ erro: "Cole a chave de API." }, 400);
+    try {
+      await testarIA({ provedor, modelo, chave });
+    } catch (e) {
+      return json({ erro: `A ${provedor === "openai" ? "OpenAI" : provedor === "anthropic" ? "Anthropic" : "Google"} recusou: ${(e as Error).message}`.slice(0, 300) }, 400);
+    }
+    const { error } = await db.from("ia_config").upsert({ dono_id: donoId, provedor, modelo, chave, atualizado_em: new Date().toISOString() });
+    if (error) return json({ erro: "Não consegui salvar." }, 500);
+    return json({ ok: true, provedor, modelo, final_chave: chave.slice(-4) });
+  }
+  return json({ erro: "ação desconhecida" }, 400);
 }
 
 /* ------------------------------------------------------------------ */
@@ -283,6 +318,29 @@ async function evolution(req: Request, cfg: Record<string, string>) {
   await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto, wa_id: d.key?.id });
   await db.from("contatos").update({ ultima_msg_em: new Date().toISOString(), numero_id: numero.id }).eq("id", contato.id);
 
+  // disparos: marca que respondeu e trata o pedido de SAIR
+  const tresDias = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  await db.from("campanha_envios").update({ respondeu_em: new Date().toISOString() }).eq("contato_id", contato.id).eq("status", "enviado").is("respondeu_em", null).gte("enviado_em", tresDias);
+  if (ehPedidoSair(texto)) {
+    const { count } = await db
+      .from("campanha_envios")
+      .select("id", { count: "exact", head: true })
+      .eq("contato_id", contato.id)
+      .eq("status", "enviado")
+      .gte("enviado_em", new Date(Date.now() - 7 * 86_400_000).toISOString());
+    if (count) {
+      if (!contato.etiquetas.includes(ETIQUETA_SAIR)) await db.from("contatos").update({ etiquetas: [...contato.etiquetas, ETIQUETA_SAIR] }).eq("id", contato.id);
+      try {
+        const confirma = "Tudo bem! Você não vai mais receber nossas mensagens. 👍";
+        await criarEnvioEvolution(db, cfg).enviar(contato, { tipo: "texto", texto: confirma, esperaMs: 1500 });
+        await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "robo", tipo: "texto", conteudo: confirma });
+      } catch (e) {
+        console.error("falha ao confirmar SAIR", e);
+      }
+      return json({ ok: true, sair: true });
+    }
+  }
+
   if (!(await travar(contato.id))) {
     // outra mensagem do mesmo cliente está sendo processada: tenta de novo em 3 s
     await ctx.store.agendar(contato, "reprocessar", new Date(Date.now() + 3000), { texto });
@@ -337,7 +395,13 @@ async function relogio(req: Request, cfg: Record<string, string>) {
       await soltar(a.contato_id);
     }
   }
-  return json({ ok: true, feitos });
+  let disparos = 0;
+  try {
+    disparos = await processarDisparos(db, cfg);
+  } catch (e) {
+    console.error("erro nos disparos", e);
+  }
+  return json({ ok: true, feitos, disparos });
 }
 
 /* ------------------------------------------------------------------ */
@@ -349,6 +413,7 @@ Deno.serve(async (req) => {
     if (rota === "/simular" && req.method === "POST") return await simular(req);
     if (rota === "/numeros" && req.method === "POST") return await numeros(req);
     if (rota === "/enviar" && req.method === "POST") return await enviarManual(req);
+    if (rota === "/ia" && req.method === "POST") return await rotaIA(req);
     const cfg = await configMotor(db);
     if (rota === "/evolution" && req.method === "POST") return await evolution(req, cfg);
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);

@@ -543,15 +543,15 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
   ia: {
     tipo: "ia",
     nome: "Agente IA",
-    descricao: "A IA conversa com o cliente usando as informações que você der. Tem custo por uso.",
+    descricao: "A IA conversa com o cliente usando as informações que você der. Ligue a IA em Agente de IA (tem custo por uso).",
     cor: "#c084fc",
     icone: "M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2L12 3z",
     grupo: "avancado",
     campos: [
       { tipo: "textarea", chave: "instrucoes", rotulo: "Quem é a IA e como deve agir", placeholder: "Você é a Ana, vendedora do [produto]. Seja simpática, responda curto…" },
       { tipo: "textarea", chave: "conhecimento", rotulo: "Informações do produto", placeholder: "Preço, o que inclui, garantia, como recebe…" },
-      { tipo: "textarea", chave: "objetivo", rotulo: "Quando a IA termina", placeholder: "Quando o cliente disser que quer comprar" },
-      { tipo: "numero", chave: "maxRespostas", rotulo: "Máximo de respostas da IA por cliente", min: 1, dica: "Controla o custo." },
+      { tipo: "textarea", chave: "objetivo", rotulo: "Quando a IA termina", placeholder: "Quando o cliente disser que quer comprar", dica: "Aí o funil segue pela saída “Objetivo concluído” (ligue no Pix)." },
+      { tipo: "numero", chave: "maxRespostas", rotulo: "Máximo de respostas da IA por cliente", min: 1, dica: "Controla o custo. Ao chegar no máximo, segue pela saída “Limite atingido”." },
       { tipo: "booleano", chave: "dividir", rotulo: "Dividir respostas longas em várias mensagens" },
     ],
     padrao: () => ({ instrucoes: "", conhecimento: "", objetivo: "", maxRespostas: 10, dividir: true }),
