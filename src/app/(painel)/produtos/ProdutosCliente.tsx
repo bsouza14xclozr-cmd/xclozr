@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ProdutosView, type ConfigPagamento, type NovoProduto, type Produto } from "./ProdutosView";
 
-const CAMPOS = "id, nome, descricao, preco_centavos, preco_minimo_centavos, entrega_tipo, entrega_conteudo, mensagem_entrega, ativo";
+const CAMPOS = "id, nome, descricao, preco_centavos, preco_minimo_centavos, custo_centavos, entrega_tipo, entrega_conteudo, mensagem_entrega, ativo";
 const CONFIG_VAZIA: ConfigPagamento = { gateway: null, taxa_percentual: 0, taxa_fixa_centavos: 0 };
 
 export function ProdutosCliente() {

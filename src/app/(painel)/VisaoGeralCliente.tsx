@@ -7,11 +7,14 @@ import { Card, EmptyState, PageHeader, Stat } from "@/components/ui";
 import { brl } from "@/lib/dinheiro";
 
 type Dia = { dia: string; faturamento: number; gasto: number };
-type Anuncio = { nome: string; faturamento: number; taxas: number; gasto: number; vendas: number; contatos: number };
+type Anuncio = { nome: string; faturamento: number; gasto: number; vendas: number; contatos: number; lucro: number };
 type Metricas = {
   faturamento: number;
   taxas: number;
   gasto: number;
+  imposto_meta: number;
+  imposto_venda: number;
+  custo_produtos: number;
   vendas: number;
   vendas_total: number;
   contatos: number;
@@ -134,7 +137,7 @@ export function VisaoGeralCliente() {
     };
   }, [periodo, carregar]);
 
-  const lucro = m ? m.faturamento - m.taxas - m.gasto : 0;
+  const lucro = m ? m.faturamento - m.taxas - m.gasto - (m.imposto_meta ?? 0) - (m.imposto_venda ?? 0) - (m.custo_produtos ?? 0) : 0;
   const etapas = m
     ? [
         { nome: "Conversas iniciadas", v: m.funil.conversas },
@@ -173,7 +176,7 @@ export function VisaoGeralCliente() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <Stat label="Faturamento" value={v(brl(m?.faturamento ?? 0))} hint={m && m.vendas_total > 0 ? `${m.vendas_total} venda(s) paga(s)` : "aguardando as primeiras vendas"} />
         <Stat label="Gasto em anúncios" value={v(brl(m?.gasto ?? 0))} hint={m && m.gasto > 0 ? "no período" : "conecte a conta Meta Ads"} />
-        <Stat label="Lucro líquido" value={v(brl(lucro))} hint="descontando gasto e taxas do gateway" />
+        <Stat label="Lucro líquido" value={v(brl(lucro))} hint="gasto, taxas, impostos e custo do produto" />
         <Stat label="ROAS" value={v(m && m.gasto > 0 ? `${(m.faturamento / m.gasto).toFixed(2).replace(".", ",")}x` : "—")} />
         <Stat label="CPA (custo por venda)" value={v(m && m.gasto > 0 && m.vendas > 0 ? brl(Math.round(m.gasto / m.vendas)) : "—")} />
       </div>
@@ -219,11 +222,11 @@ export function VisaoGeralCliente() {
         </Card>
       </div>
 
-      <Card title="Lucro por anúncio">
+      <Card title="Lucro por campanha">
         {!m || m.por_anuncio.length === 0 ? (
           <EmptyState
             title="Nenhum anúncio rastreado"
-            text="Crie um link de rastreio em Anúncios e use no seu anúncio para ver o lucro de cada um aqui."
+            text="Conecte o Meta Ads em Anúncios: o gasto e as vendas de cada campanha aparecem aqui."
             action={
               <Link href="/anuncios" className="text-sm font-semibold text-limao">
                 Ir para Anúncios →
@@ -235,7 +238,7 @@ export function VisaoGeralCliente() {
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="text-left text-xs text-suave">
-                  <th className="py-2 font-medium">Anúncio</th>
+                  <th className="py-2 font-medium">Campanha</th>
                   <th className="py-2 text-right font-medium">Contatos</th>
                   <th className="py-2 text-right font-medium">Vendas</th>
                   <th className="py-2 text-right font-medium">Faturamento</th>
@@ -245,7 +248,7 @@ export function VisaoGeralCliente() {
               </thead>
               <tbody className="divide-y divide-borda">
                 {m.por_anuncio.map((a) => {
-                  const l = a.faturamento - a.taxas - a.gasto;
+                  const l = a.lucro;
                   return (
                     <tr key={a.nome}>
                       <td className="py-2.5">{a.nome}</td>

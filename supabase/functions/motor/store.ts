@@ -3,7 +3,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Contato, Evento, Funil, PatchContato, Produto, Saida, Store } from "./motor.ts";
 
 export const CAMPOS_CONTATO =
-  "id, dono_id, telefone, nome, funil_id, bloco_atual, aguardando, pix_ativo, finalizado, ja_respondeu, robo_ativo, campos, etiquetas, kanban_coluna_id, simulacao, numero_id, anuncio:anuncios(codigo_rastreio)";
+  "id, dono_id, telefone, nome, funil_id, bloco_atual, aguardando, pix_ativo, finalizado, ja_respondeu, robo_ativo, campos, etiquetas, kanban_coluna_id, simulacao, numero_id, meta_ad_id, anuncio:anuncios(codigo_rastreio)";
 
 export function linhaParaContato(l: any): Contato & { numero_id: string | null } {
   const an = Array.isArray(l.anuncio) ? l.anuncio[0] : l.anuncio;

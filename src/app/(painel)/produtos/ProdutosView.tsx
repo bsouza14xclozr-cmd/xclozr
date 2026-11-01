@@ -13,6 +13,7 @@ export type Produto = {
   descricao: string | null;
   preco_centavos: number;
   preco_minimo_centavos: number | null;
+  custo_centavos: number;
   entrega_tipo: EntregaTipo;
   entrega_conteudo: string | null;
   mensagem_entrega: string | null;
@@ -169,6 +170,7 @@ const VAZIO: NovoProduto = {
   descricao: "",
   preco_centavos: 0,
   preco_minimo_centavos: null,
+  custo_centavos: 0,
   entrega_tipo: "link",
   entrega_conteudo: "",
   mensagem_entrega: "Pagamento confirmado! ✅ Aqui está seu acesso:",
@@ -187,6 +189,7 @@ function FormProduto({
   const [p, setP] = useState(inicial);
   const [preco, setPreco] = useState(inicial.preco_centavos ? paraInput(inicial.preco_centavos) : "");
   const [minimo, setMinimo] = useState(paraInput(inicial.preco_minimo_centavos));
+  const [custo, setCusto] = useState(inicial.custo_centavos ? paraInput(inicial.custo_centavos) : "");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const entrega = ENTREGAS.find((e) => e.valor === p.entrega_tipo) ?? ENTREGAS[0];
@@ -201,7 +204,7 @@ function FormProduto({
     setErro(null);
     setSalvando(true);
     try {
-      await onSalvar({ ...p, nome: p.nome.trim(), preco_centavos: precoC, preco_minimo_centavos: minimoC });
+      await onSalvar({ ...p, nome: p.nome.trim(), preco_centavos: precoC, preco_minimo_centavos: minimoC, custo_centavos: paraCentavos(custo) ?? 0 });
     } catch {
       setErro("Não consegui salvar. Tente de novo.");
       setSalvando(false);
@@ -228,6 +231,12 @@ function FormProduto({
             Menor preço que o robô pode aceitar (opcional)
           </label>
           <input id="p-min" inputMode="decimal" className={inputCls} value={minimo} onChange={(e) => setMinimo(e.target.value)} placeholder="Ex.: 17,90" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="p-custo" className="text-[13px] text-suave">
+            Custo por venda (R$, opcional)
+          </label>
+          <input id="p-custo" inputMode="decimal" className={inputCls} value={custo} onChange={(e) => setCusto(e.target.value)} placeholder="0,00 (produto digital)" />
         </div>
       </div>
 

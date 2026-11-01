@@ -249,6 +249,22 @@ function textoDaMensagem(m: any): string {
   );
 }
 
+// Anúncio de origem (Click-to-WhatsApp): vem na 1ª mensagem em contextInfo.externalAdReply
+function anuncioDaMensagem(d: any): { id: string; ctwa: string | null; origem: Record<string, unknown> } | null {
+  const m = d?.message ?? {};
+  const ctx = m.extendedTextMessage?.contextInfo ?? m.imageMessage?.contextInfo ?? m.videoMessage?.contextInfo ?? m.contextInfo ?? d?.contextInfo ?? null;
+  const ad = ctx?.externalAdReply ?? d?.contextInfo?.externalAdReply ?? null;
+  const ref = d?.adReferral ?? d?.referral ?? null;
+  const id = ad?.sourceId ?? ref?.sourceId ?? ref?.source_id;
+  if (!id) return null;
+  if (ad?.sourceType && String(ad.sourceType).toLowerCase() !== "ad") return null;
+  return {
+    id: String(id),
+    ctwa: ad?.ctwaClid ?? ref?.ctwaClid ?? ref?.ctwa_clid ?? null,
+    origem: { url: ad?.sourceUrl ?? ref?.sourceUrl ?? ref?.source_url ?? null, titulo: ad?.title ?? null, texto: ad?.body ?? null, em: new Date().toISOString() },
+  };
+}
+
 async function evolution(req: Request, cfg: Record<string, string>) {
   const url = new URL(req.url);
   if (!cfg.segredo_webhook || url.searchParams.get("segredo") !== cfg.segredo_webhook) return json({ erro: "segredo inválido" }, 401);
@@ -305,10 +321,15 @@ async function evolution(req: Request, cfg: Record<string, string>) {
   }
 
   const ctx = ctxPara(donoId, false, cfg);
+  const anuncio = anuncioDaMensagem(d);
+  if (linha && anuncio && linha.meta_ad_id !== anuncio.id) {
+    // último clique vale: o contato voltou por outro anúncio
+    await db.from("contatos").update({ meta_ad_id: anuncio.id, ctwa_clid: anuncio.ctwa, origem: anuncio.origem }).eq("id", linha.id);
+  }
   if (!linha) {
     const { data: novo } = await db
       .from("contatos")
-      .insert({ dono_id: donoId, telefone, nome: d.pushName ?? null, numero_id: numero.id })
+      .insert({ dono_id: donoId, telefone, nome: d.pushName ?? null, numero_id: numero.id, ...(anuncio ? { meta_ad_id: anuncio.id, ctwa_clid: anuncio.ctwa, origem: anuncio.origem } : {}) })
       .select(CAMPOS_CONTATO)
       .single();
     linha = novo;
