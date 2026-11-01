@@ -13,7 +13,8 @@ import {
   type Regra,
 } from "@/lib/funil/blocos";
 import type { NoBloco } from "@/lib/funil/grafo";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { IconeBloco } from "./BlocoNode";
 
 export type Opcao = { id: string; nome: string };
@@ -67,6 +68,104 @@ function Rotulo({ id, texto, dica }: { id: string; texto: string; dica?: string 
         {texto}
       </label>
       {dica && <span className="text-[11px] text-suave">{dica}</span>}
+    </div>
+  );
+}
+
+/* ---------- envio de mídia (Supabase Storage) ---------- */
+
+const ACEITA: Record<"imagem" | "video" | "audio" | "arquivo", string> = {
+  imagem: "image/jpeg,image/png,image/webp,image/gif",
+  video: "video/mp4,video/3gpp,video/quicktime",
+  audio: "audio/mpeg,audio/mp3,audio/ogg,audio/mp4,audio/aac,audio/wav,audio/x-m4a,audio/webm",
+  arquivo: ".pdf,.zip,.doc,.docx,.xls,.xlsx,.txt",
+};
+
+function nomeSeguro(n: string) {
+  const partes = n.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(".");
+  const ext = partes.length > 1 ? partes.pop() : "";
+  const base = partes.join("-").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "midia";
+  return ext ? `${base}.${ext.replace(/[^a-z0-9]/g, "")}` : base;
+}
+
+function CampoMidia({
+  tipo,
+  url,
+  onChange,
+}: {
+  tipo: "imagem" | "video" | "audio" | "arquivo";
+  url: string;
+  onChange: (url: string, nomeArquivo?: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [estado, setEstado] = useState<"" | "enviando">("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [colar, setColar] = useState(false);
+
+  async function enviar(arquivo: File) {
+    setErro(null);
+    if (arquivo.size > 16 * 1024 * 1024) {
+      setErro("Arquivo maior que 16 MB (limite do WhatsApp).");
+      return;
+    }
+    setEstado("enviando");
+    try {
+      const supabase = createClient();
+      const { data: u } = await supabase.auth.getUser();
+      if (!u.user) throw new Error("sem usuário");
+      const caminho = `${u.user.id}/${crypto.randomUUID().slice(0, 8)}-${nomeSeguro(arquivo.name)}`;
+      const { error } = await supabase.storage.from("midias").upload(caminho, arquivo, { contentType: arquivo.type || undefined, upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from("midias").getPublicUrl(caminho);
+      onChange(data.publicUrl, arquivo.name);
+    } catch {
+      setErro("Não consegui enviar o arquivo. Confira o formato e tente de novo.");
+    } finally {
+      setEstado("");
+      if (ref.current) ref.current.value = "";
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <input ref={ref} type="file" accept={ACEITA[tipo]} className="hidden" onChange={(e) => e.target.files?.[0] && enviar(e.target.files[0])} />
+      {url ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-borda bg-fundo p-2">
+          {tipo === "imagem" && (
+            // eslint-disable-next-line @next/next/no-img-element -- prévia da mídia enviada
+            <img src={url} alt="Prévia" className="max-h-40 rounded-md object-contain" />
+          )}
+          {tipo === "video" && <video src={url} controls className="max-h-40 rounded-md" />}
+          {tipo === "audio" && <audio src={url} controls className="w-full" />}
+          {tipo === "arquivo" && <span className="truncate text-xs text-suave">{decodeURIComponent(url.split("/").pop() ?? "")}</span>}
+          <div className="flex gap-3 text-xs">
+            <button type="button" onClick={() => ref.current?.click()} className="text-limao hover:underline">
+              Trocar
+            </button>
+            <button type="button" onClick={() => onChange("")} className="text-suave hover:text-vermelho">
+              Remover
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => ref.current?.click()}
+            disabled={estado === "enviando"}
+            className="min-h-10 rounded-[10px] border border-dashed border-limao/60 bg-limao-escuro px-4 text-sm font-semibold text-limao hover:brightness-110 disabled:opacity-60"
+          >
+            {estado === "enviando" ? "Enviando…" : `⬆ Enviar ${tipo === "arquivo" ? "arquivo" : tipo === "audio" ? "áudio" : tipo === "video" ? "vídeo" : "imagem"}`}
+          </button>
+          <button type="button" onClick={() => setColar((v) => !v)} className="text-xs text-suave hover:text-texto">
+            ou colar link
+          </button>
+        </div>
+      )}
+      {!url && colar && (
+        <input aria-label="Link do arquivo" className={inputCls} placeholder="https://…" onBlur={(e) => e.target.value.trim() && onChange(e.target.value.trim())} />
+      )}
+      {erro && <span className="text-xs text-vermelho">{erro}</span>}
     </div>
   );
 }
@@ -142,19 +241,19 @@ function ItensMensagem({ id, valor, onChange }: { id: string; valor: ItemMensage
           )}
           {(item.tipo === "imagem" || item.tipo === "video") && (
             <>
-              <input aria-label="Link do arquivo" className={inputCls} placeholder="Link do arquivo (https://…)" value={item.url} onChange={(e) => set(i, { ...item, url: e.target.value })} />
+              <CampoMidia tipo={item.tipo} url={item.url} onChange={(url) => set(i, { ...item, url })} />
               <input aria-label="Legenda" className={inputCls} placeholder="Legenda (opcional)" value={item.legenda} onChange={(e) => set(i, { ...item, legenda: e.target.value })} />
             </>
           )}
           {item.tipo === "audio" && (
             <>
-              <input aria-label="Link do áudio" className={inputCls} placeholder="Link do áudio (https://…)" value={item.url} onChange={(e) => set(i, { ...item, url: e.target.value })} />
+              <CampoMidia tipo="audio" url={item.url} onChange={(url) => set(i, { ...item, url })} />
               <span className="text-[11px] text-suave">Enviado como áudio gravado na hora, com “gravando áudio…” antes.</span>
             </>
           )}
           {item.tipo === "arquivo" && (
             <>
-              <input aria-label="Link do arquivo" className={inputCls} placeholder="Link do arquivo (https://…)" value={item.url} onChange={(e) => set(i, { ...item, url: e.target.value })} />
+              <CampoMidia tipo="arquivo" url={item.url} onChange={(url, nome) => set(i, { ...item, url, nome: item.nome || nome || "" })} />
               <input aria-label="Nome do arquivo" className={inputCls} placeholder="Nome do arquivo (ex.: guia.pdf)" value={item.nome} onChange={(e) => set(i, { ...item, nome: e.target.value })} />
             </>
           )}
