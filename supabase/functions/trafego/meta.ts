@@ -187,6 +187,7 @@ export async function agir(
   acao: "pausar" | "ativar" | "orcamento",
   valorCentavos?: number,
   origem: "painel" | "regra" = "painel",
+  extra: { regraId?: string; motivo?: string } = {},
 ) {
   const { data: cfg } = await db.from("meta_config").select("token").eq("dono_id", donoId).maybeSingle();
   if (!cfg) throw new Error("Meta não conectado");
@@ -218,10 +219,10 @@ export async function agir(
   try {
     await pedir(`${GRAPH}/${id}`, cfg.token, { method: "POST", body: corpo, headers: { "content-type": "application/x-www-form-urlencoded" } });
   } catch (e) {
-    await db.from("meta_acoes").insert({ dono_id: donoId, objeto_id: id, nivel, nome: obj.nome, acao, de, para, origem, ok: false, erro: String((e as Error).message).slice(0, 300) });
+    await db.from("meta_acoes").insert({ dono_id: donoId, objeto_id: id, nivel, nome: obj.nome, acao, de, para, origem, ok: false, erro: String((e as Error).message).slice(0, 300), regra_id: extra.regraId ?? null, motivo: extra.motivo ?? null });
     throw e;
   }
   await db.from(TABELA[nivel]).update(patch).eq("id", id);
-  await db.from("meta_acoes").insert({ dono_id: donoId, objeto_id: id, nivel, nome: obj.nome, acao, de, para, origem, ok: true });
+  await db.from("meta_acoes").insert({ dono_id: donoId, objeto_id: id, nivel, nome: obj.nome, acao, de, para, origem, ok: true, regra_id: extra.regraId ?? null, motivo: extra.motivo ?? null });
   return { ok: true };
 }

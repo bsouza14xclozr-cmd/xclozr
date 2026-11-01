@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type Aviso = { id: string; tipo: string; texto: string; link: string | null; lido: boolean; criado_em: string };
 
-const ICONE: Record<string, string> = { venda: "💰", humano: "🙋", chip: "📵", funil: "⚠️", info: "🔔" };
+const ICONE: Record<string, string> = { venda: "💰", humano: "🙋", chip: "📵", funil: "⚠️", info: "🔔", trafego: "📈" };
 
 function quando(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -64,7 +64,10 @@ export function Sininho() {
       setAvisos((as) => as.map((x) => (x.id === a.id ? { ...x, lido: true } : x)));
       await createClient().from("avisos").update({ lido: true }).eq("id", a.id);
     }
-    if (a.link) router.push(a.link);
+    if (!a.link) return;
+    // mesma página com outro ?parâmetro (ex.: /anuncios?aba=agente): recarrega para a tela ler o parâmetro
+    if (a.link.includes("?") && a.link.split("?")[0] === window.location.pathname) window.location.assign(a.link);
+    else router.push(a.link);
   }
 
   async function lerTodos() {

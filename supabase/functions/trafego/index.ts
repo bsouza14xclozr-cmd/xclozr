@@ -2,6 +2,8 @@
 // XClozr — módulo Tráfego (Meta Ads). Separado do motor para virar módulo pago no SaaS.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { agir, contasDoToken, quemSou, sincronizarDono, type Nivel } from "./meta.ts";
+import { avaliarRegras, diaBR, horaBR, lerCfg } from "./regras.ts";
+import { aplicarSugestao, rodarAgente } from "./agente.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -91,6 +93,12 @@ async function painel(req: Request) {
     return json({ ok: true });
   }
 
+  if (acao === "agente_rodar") return json(await rodarAgente(db, donoId, true));
+
+  if (acao === "aplicar_sugestao") return json(await aplicarSugestao(db, donoId, String(corpo.id ?? "")));
+
+  if (acao === "regras_rodar") return json(await avaliarRegras(db, donoId));
+
   if (acao === "agir") {
     const nivel = String(corpo.nivel) as Nivel;
     if (!["campanha", "conjunto", "anuncio"].includes(nivel)) return json({ erro: "nível inválido" }, 400);
@@ -106,15 +114,33 @@ async function painel(req: Request) {
   return json({ erro: "ação desconhecida" }, 400);
 }
 
-// Chamado pelo pg_cron: atualiza quem está há mais de ~55 min sem sincronizar
+// Chamado pelo pg_cron a cada 15 min: sincroniza, roda as regras e o agente diário
 async function cron(req: Request) {
   const seg = await segredoRelogio();
   if (!seg || req.headers.get("x-segredo") !== seg) return json({ erro: "segredo inválido" }, 401);
-  const limite = new Date(Date.now() - 55 * 60_000).toISOString();
-  const { data: donos } = await db.from("meta_config").select("dono_id").or(`ultimo_sync.is.null,ultimo_sync.lt.${limite}`).limit(5);
-  const feitos: unknown[] = [];
-  for (const d of donos ?? []) feitos.push(await sincronizarDono(db, d.dono_id));
-  return json({ ok: true, feitos: feitos.length });
+  const inicio = Date.now();
+  const { data: donos } = await db.from("meta_config").select("dono_id, ultimo_sync").limit(50);
+  const resumo: Record<string, unknown> = {};
+  for (const d of donos ?? []) {
+    if (Date.now() - inicio > 110_000) break; // não estoura o tempo da função
+    try {
+      const { count: regrasAtivas } = await db.from("meta_regras").select("id", { count: "exact", head: true }).eq("dono_id", d.dono_id).eq("ativa", true);
+      const idade = d.ultimo_sync ? Date.now() - new Date(d.ultimo_sync).getTime() : Infinity;
+      // com regras ativas os números precisam estar frescos; sem regras, de hora em hora basta
+      if (idade > (regrasAtivas ? 14 : 55) * 60_000) await sincronizarDono(db, d.dono_id);
+      const regras = regrasAtivas ? await avaliarRegras(db, d.dono_id) : null;
+      const cfg = await lerCfg(db, d.dono_id);
+      let agente: unknown = null;
+      if (cfg.agente_modo !== "desligado" && horaBR() >= cfg.agente_hora && cfg.agente_ultimo !== diaBR(0)) {
+        await db.from("trafego_config").upsert({ dono_id: d.dono_id, agente_ultimo: diaBR(0) }); // 1 tentativa por dia
+        agente = await rodarAgente(db, d.dono_id);
+      }
+      resumo[d.dono_id.slice(0, 6)] = { regras, agente };
+    } catch (e) {
+      console.error("cron tráfego", d.dono_id, e);
+    }
+  }
+  return json({ ok: true, resumo });
 }
 
 Deno.serve(async (req) => {

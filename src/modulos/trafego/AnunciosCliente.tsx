@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, PageHeader } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
+import { AbaAgente, AbaRegras } from "./RegrasAgente";
 import { PERIODOS, chamarTrafego, intervaloDias, relatorio, type Linha, type Nivel, type Periodo, type StatusMeta } from "./api";
 
 const inputCls =
@@ -269,7 +270,15 @@ function Orcamento({ linha, nivel, onSalvar }: { linha: Linha; nivel: Nivel; onS
   );
 }
 
+type Aba = "relatorio" | "regras" | "agente";
+const ABAS_PAGINA: { v: Aba; nome: string }[] = [
+  { v: "relatorio", nome: "📊 Relatório" },
+  { v: "regras", nome: "⚡ Regras automáticas" },
+  { v: "agente", nome: "🤖 Agente IA" },
+];
+
 export function AnunciosCliente() {
+  const [aba, setAba] = useState<Aba>("relatorio");
   const [status, setStatus] = useState<StatusMeta | null>(null);
   const [config, setConfig] = useState(false);
   const [nivel, setNivel] = useState<Nivel>("campanha");
@@ -282,7 +291,7 @@ export function AnunciosCliente() {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [acoes, setAcoes] = useState<{ id: number; nome: string; acao: string; de: string; para: string; origem: string; ok: boolean; erro: string | null; criado_em: string }[]>([]);
+  const [acoes, setAcoes] = useState<{ id: number; nome: string; acao: string; de: string; para: string; origem: string; ok: boolean; erro: string | null; motivo: string | null; criado_em: string }[]>([]);
 
   const carregarStatus = useCallback(async () => {
     try {
@@ -300,9 +309,23 @@ export function AnunciosCliente() {
     } catch {
       setErro("Não consegui carregar o relatório.");
     }
-    const { data } = await createClient().from("meta_acoes").select("id, nome, acao, de, para, origem, ok, erro, criado_em").order("criado_em", { ascending: false }).limit(8);
+    const { data } = await createClient().from("meta_acoes").select("id, nome, acao, de, para, origem, ok, erro, motivo, criado_em").order("criado_em", { ascending: false }).limit(8);
     setAcoes((data ?? []) as typeof acoes);
   }, [nivel, periodo, conta]);
+
+  useEffect(() => {
+    const a = new URLSearchParams(window.location.search).get("aba");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- aba vinda do link (?aba=agente)
+    if (a === "regras" || a === "agente") setAba(a);
+  }, []);
+
+  function trocarAba(a: Aba) {
+    setAba(a);
+    const u = new URL(window.location.href);
+    if (a === "relatorio") u.searchParams.delete("aba");
+    else u.searchParams.set("aba", a);
+    window.history.replaceState(null, "", u);
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carrega ao abrir a página
@@ -395,7 +418,8 @@ export function AnunciosCliente() {
         title="Anúncios"
         subtitle={status.conectado ? `Meta Ads de ${status.usuario ?? "sua conta"} · atualizado ${quando(status.ultimo_sync)}` : "Conecte o Meta Ads para ver gasto, vendas e lucro de cada anúncio"}
         actions={
-          status.conectado && (
+          status.conectado &&
+          aba === "relatorio" && (
             <>
               <button
                 type="button"
@@ -413,14 +437,32 @@ export function AnunciosCliente() {
         }
       />
 
-      {erro && <p className="text-sm text-vermelho">{erro}</p>}
-      {status.erro && (
+      <div className="flex flex-wrap gap-1 rounded-xl border border-borda bg-cartao p-1 self-start" role="tablist" aria-label="Seções de anúncios">
+        {ABAS_PAGINA.map((a) => (
+          <button
+            key={a.v}
+            type="button"
+            role="tab"
+            aria-selected={aba === a.v}
+            onClick={() => trocarAba(a.v)}
+            className={`min-h-10 rounded-lg px-4 text-sm transition ${aba === a.v ? "bg-limao font-bold text-fundo" : "text-suave hover:bg-elevado hover:text-texto"}`}
+          >
+            {a.nome}
+          </button>
+        ))}
+      </div>
+
+      {aba === "regras" && <AbaRegras conectado={status.conectado} />}
+      {aba === "agente" && <AbaAgente conectado={status.conectado} />}
+
+      {aba === "relatorio" && erro && <p className="text-sm text-vermelho">{erro}</p>}
+      {aba === "relatorio" && status.erro && (
         <p className="rounded-xl border border-[#5a4220] bg-[#241b0e] px-4 py-3 text-sm text-laranja">Última atualização com erro: {status.erro}</p>
       )}
 
-      {!status.conectado && <Conectar onConectado={() => void carregarStatus()} />}
+      {aba === "relatorio" && !status.conectado && <Conectar onConectado={() => void carregarStatus()} />}
 
-      {status.conectado && config && (
+      {aba === "relatorio" && status.conectado && config && (
         <Configuracoes
           status={status}
           onFechar={() => setConfig(false)}
@@ -431,7 +473,7 @@ export function AnunciosCliente() {
         />
       )}
 
-      {status.conectado && (
+      {aba === "relatorio" && status.conectado && (
         <Card>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-[10px] border border-borda bg-fundo p-1" role="tablist" aria-label="Nível">
@@ -615,7 +657,7 @@ export function AnunciosCliente() {
         </Card>
       )}
 
-      {status.conectado && acoes.length > 0 && (
+      {aba === "relatorio" && status.conectado && acoes.length > 0 && (
         <Card title="Últimas ações">
           <ul className="flex flex-col divide-y divide-borda text-sm">
             {acoes.map((a) => (
@@ -624,7 +666,7 @@ export function AnunciosCliente() {
                 <span className="font-medium">{a.nome}</span>
                 <span className="text-suave">
                   {a.acao === "orcamento" ? `orçamento ${brl(Number(a.de))} → ${brl(Number(a.para))}` : a.acao === "pausar" ? "pausado" : "ativado"}
-                  {a.origem === "regra" ? " (regra automática)" : ""}
+                  {a.motivo ? ` (${a.motivo})` : a.origem === "regra" ? " (regra automática)" : ""}
                   {!a.ok && a.erro ? ` — ${a.erro}` : ""}
                 </span>
                 <span className="ml-auto text-xs text-suave">{quando(a.criado_em)}</span>
