@@ -86,6 +86,30 @@ async function numeros(req: Request) {
   return json(r.dados, r.status);
 }
 
+// Resposta manual pelo painel (tela Conversas)
+async function enviarManual(req: Request) {
+  const donoId = await usuarioDoJwt(req);
+  if (!donoId) return json({ erro: "não autenticado" }, 401);
+  const corpo = await req.json().catch(() => ({}));
+  const texto = String(corpo.texto ?? "").trim().slice(0, 4000);
+  if (!texto) return json({ erro: "mensagem vazia" }, 400);
+  const { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("id", String(corpo.contato_id ?? "")).eq("dono_id", donoId).maybeSingle();
+  if (!linha) return json({ erro: "conversa não encontrada" }, 404);
+  const contato = linhaParaContato(linha);
+  if (contato.simulacao) return json({ erro: "conversa de simulação" }, 400);
+  const cfg = await configMotor(db);
+  try {
+    await criarEnvioEvolution(db, cfg).enviar(contato, { tipo: "texto", texto, esperaMs: 0 });
+  } catch (e) {
+    return json({ erro: `Não consegui enviar: ${(e as Error).message}` }, 400);
+  }
+  await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "humano", tipo: "texto", conteudo: texto });
+  const patch: Record<string, unknown> = { ultima_msg_em: new Date().toISOString() };
+  if (corpo.pausar_robo !== false) patch.robo_ativo = false;
+  await db.from("contatos").update(patch).eq("id", contato.id);
+  return json({ ok: true });
+}
+
 async function simular(req: Request) {
   const corpo = await req.json().catch(() => ({}));
   let donoId: string | null = null;
@@ -234,7 +258,7 @@ async function evolution(req: Request, cfg: Record<string, string>) {
         .from("mensagens")
         .select("conteudo")
         .eq("contato_id", linha.id)
-        .eq("autor", "robo")
+        .in("autor", ["robo", "humano"])
         .gte("criado_em", new Date(Date.now() - 120_000).toISOString());
       const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto.trim());
       if (!foiRobo) {
@@ -324,6 +348,7 @@ Deno.serve(async (req) => {
     if (rota === "/saude") return json({ ok: true, motor: "xclozr", hora: new Date().toISOString() });
     if (rota === "/simular" && req.method === "POST") return await simular(req);
     if (rota === "/numeros" && req.method === "POST") return await numeros(req);
+    if (rota === "/enviar" && req.method === "POST") return await enviarManual(req);
     const cfg = await configMotor(db);
     if (rota === "/evolution" && req.method === "POST") return await evolution(req, cfg);
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);

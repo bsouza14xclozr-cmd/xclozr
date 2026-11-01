@@ -369,6 +369,7 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
       const produto = cfg.produtoId ? await ctx.store.produto(String(cfg.produtoId)) : null;
       if (!produto) {
         ctx.log?.("bloco Pix sem produto");
+        await ctx.store.avisarDono(c, "O funil chegou num bloco Pix sem produto escolhido e parou. Abra o funil e selecione o produto no bloco Pix.");
         return { parar: true, finalizar: true };
       }
       const anterior = no(funil, (funil.grafo.edges.find((e) => e.target === n.id)?.source) ?? "");
