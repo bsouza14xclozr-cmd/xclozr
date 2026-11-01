@@ -9,6 +9,7 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import * as M from "./motor.ts";
 import { CAMPOS_CONTATO, criarStore, linhaParaContato } from "./store.ts";
 import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
+import { rotasNumeros } from "./numeros.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -70,6 +71,21 @@ function ctxPara(donoId: string, simulacao: boolean, cfg: Record<string, string>
 /* ------------------------------------------------------------------ */
 /* Simulador                                                           */
 /* ------------------------------------------------------------------ */
+async function usuarioDoJwt(req: Request) {
+  const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return null;
+  const { data: u } = await db.auth.getUser(jwt);
+  return u?.user?.id ?? null;
+}
+
+async function numeros(req: Request) {
+  const donoId = await usuarioDoJwt(req);
+  if (!donoId) return json({ erro: "não autenticado" }, 401);
+  const corpo = await req.json().catch(() => ({}));
+  const r = await rotasNumeros(db, donoId, corpo);
+  return json(r.dados, r.status);
+}
+
 async function simular(req: Request) {
   const corpo = await req.json().catch(() => ({}));
   let donoId: string | null = null;
@@ -79,9 +95,7 @@ async function simular(req: Request) {
     const cfg = await configMotor(db);
     if (cfg.segredo_relogio && segredo === cfg.segredo_relogio && corpo.dono_id) donoId = String(corpo.dono_id);
   } else {
-    const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-    const { data: u } = await db.auth.getUser(jwt);
-    donoId = u?.user?.id ?? null;
+    donoId = await usuarioDoJwt(req);
   }
   if (!donoId) return json({ erro: "não autenticado" }, 401);
 
@@ -184,13 +198,22 @@ async function evolution(req: Request, cfg: Record<string, string>) {
 
   const tipo = String(corpo.event ?? "").toLowerCase().replace(/_/g, ".");
   const instancia = String(corpo.instance ?? "");
-  const { data: numero } = await db.from("numeros").select("id, dono_id").eq("instancia", instancia).maybeSingle();
+  const { data: numero } = await db.from("numeros").select("id, dono_id, robo_ligado").eq("instancia", instancia).maybeSingle();
   if (!numero) return json({ ok: true, aviso: "instância desconhecida" });
 
   if (tipo === "connection.update") {
     const estado = corpo.data?.state;
     const status = estado === "open" ? "conectado" : estado === "close" ? "desconectado" : null;
-    if (status) await db.from("numeros").update({ status, conectado_em: status === "conectado" ? new Date().toISOString() : undefined }).eq("id", numero.id);
+    const wuid: string | undefined = corpo.data?.wuid;
+    if (status)
+      await db
+        .from("numeros")
+        .update({
+          status,
+          ...(status === "conectado" ? { conectado_em: new Date().toISOString() } : {}),
+          ...(wuid ? { telefone: wuid.split("@")[0].split(":")[0] } : {}),
+        })
+        .eq("id", numero.id);
     return json({ ok: true });
   }
   if (tipo !== "messages.upsert") return json({ ok: true });
@@ -300,6 +323,7 @@ Deno.serve(async (req) => {
   try {
     if (rota === "/saude") return json({ ok: true, motor: "xclozr", hora: new Date().toISOString() });
     if (rota === "/simular" && req.method === "POST") return await simular(req);
+    if (rota === "/numeros" && req.method === "POST") return await numeros(req);
     const cfg = await configMotor(db);
     if (rota === "/evolution" && req.method === "POST") return await evolution(req, cfg);
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);
