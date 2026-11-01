@@ -31,6 +31,16 @@ cp .env.example .env.local   # preencha as chaves
 npm run dev                  # abre em http://localhost:3000
 ```
 
+## Configurar o Supabase
+
+1. **Tabelas:** SQL Editor → New query → cole o conteúdo de `supabase/migrations/0001_inicial.sql` → Run.
+2. **Seu usuário:** Authentication → Users → Add user → e-mail e senha (marque "Auto Confirm User").
+3. **Fechar cadastro público:** Authentication → Sign In / Providers → desligue "Allow new users to sign up".
+4. **Chaves:** Project Settings → API → copie a *Project URL* e a *anon public key* para as variáveis
+   `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` (no `.env.local` e na Vercel).
+
+Nunca coloque a chave `service_role` no painel nem no GitHub.
+
 ## Publicar na Vercel
 
 1. Em vercel.com → **Add New → Project** → importe o repositório `xclozr`.
@@ -41,7 +51,7 @@ npm run dev                  # abre em http://localhost:3000
 ## Rota do projeto
 
 - [x] Parte 1 — projeto, layout e páginas esqueleto
-- [ ] Supabase — login e tabelas
+- [x] Supabase — login e tabelas (código pronto; falta rodar o SQL e cadastrar as chaves)
 - [ ] Fase 1 — conectar números pelo QR code (Evolution API)
 - [ ] Fase 2 — conversas
 - [ ] Fase 3 — funil sem IA

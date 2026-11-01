@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { sair } from "@/app/login/actions";
 
 type Item = { href: string; label: string; icon: ReactNode };
 
@@ -79,7 +80,7 @@ const itens: Item[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ email }: { email: string | null }) {
   const pathname = usePathname();
 
   return (
@@ -114,6 +115,19 @@ export function Sidebar() {
           );
         })}
       </div>
+
+      {email && (
+        <div className="mt-2 hidden flex-col gap-2 rounded-xl border border-borda p-3.5 md:mt-auto md:flex">
+          <span className="truncate text-xs text-suave" title={email}>
+            {email}
+          </span>
+          <form action={sair}>
+            <button type="submit" className="min-h-9 text-sm font-medium text-texto hover:text-limao">
+              Sair
+            </button>
+          </form>
+        </div>
+      )}
     </nav>
   );
 }
