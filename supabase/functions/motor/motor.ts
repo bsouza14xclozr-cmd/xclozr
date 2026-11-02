@@ -114,6 +114,12 @@ export function contemAlguma(texto: string, lista: string[]) {
   return lista.some((p) => t.includes(` ${p} `) || (p.includes(" ") && t.includes(p)));
 }
 
+/** "não quero", "nao", "n", "agora não"… → o cliente está recusando (não conta como compra). */
+export function negou(texto: string) {
+  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ")} `;
+  return / (nao|naum|naon|nao quero|n|nem|nunca|jamais|dispenso|sem interesse) /.test(t);
+}
+
 function brl(centavos: number) {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -608,7 +614,7 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
     }
 
     case "objecoes": {
-      if (contemAlguma(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
+      if (!negou(texto) && contemAlguma(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
       const obj = ((cfg.objecoes ?? []) as { palavras: string; resposta: string }[]).find((o) => contemAlguma(texto, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
       if (cfg.naoEntendeu) return repetir(cfg.naoEntendeu);
@@ -616,7 +622,7 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
     }
 
     case "upsell": {
-      if (contemAlguma(texto, palavras(cfg.palavrasSim))) return seguir("aceitou");
+      if (!negou(texto) && contemAlguma(texto, palavras(cfg.palavrasSim))) return seguir("aceitou");
       return seguir("recusou");
     }
 
