@@ -12,6 +12,7 @@ import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
 import { rotasNumeros } from "./numeros.ts";
 import { MODELO_PADRAO, responderIA, testarIA, type Provedor } from "./ia.ts";
 import { ETIQUETA_SAIR, ehPedidoSair, processarDisparos } from "./disparos.ts";
+import { configGateway, pedidoPago, rotaGateway } from "./gateway.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -119,6 +120,101 @@ async function numeros(req: Request) {
   const corpo = await req.json().catch(() => ({}));
   const r = await rotasNumeros(db, donoId, corpo);
   return json(r.dados, r.status);
+}
+
+// Conexão do gateway de Pix (o token só entra; nunca volta para o navegador)
+async function gateway(req: Request) {
+  const donoId = await usuarioDoJwt(req);
+  if (!donoId) return json({ erro: "não autenticado" }, 401);
+  const r = await rotaGateway(db, donoId, await req.json().catch(() => ({})));
+  return json(r, "erro" in r && r.erro ? 400 : 200);
+}
+
+/* ------------------------------------------------------------------ */
+/* Pagamento confirmado pelo gateway                                   */
+/* ------------------------------------------------------------------ */
+async function confirmarPagamento(pagamentoId: string, cfg: Record<string, string>) {
+  const { data: pg } = await db
+    .from("pagamentos")
+    .update({ status: "pago", pago_em: new Date().toISOString(), verificar_em: null })
+    .eq("id", pagamentoId)
+    .neq("status", "pago")
+    .select("id, contato_id, dono_id")
+    .maybeSingle();
+  if (!pg) return false; // já estava pago (aviso repetido)
+  for (let i = 0; i < 8; i++) {
+    if (await travar(pg.contato_id)) {
+      try {
+        const contato = await carregarContato(pg.contato_id);
+        if (contato) {
+          const esperado = contato.pix_ativo?.pagamento_id === pg.id;
+          await M.pixPago(ctxPara(pg.dono_id, false, cfg), contato, pg.id);
+          if (!esperado) {
+            await db.from("avisos").insert({
+              dono_id: pg.dono_id,
+              contato_id: pg.contato_id,
+              tipo: "venda",
+              texto: `Pix pago fora da hora (depois de expirar ou de outra conversa) por ${contato.nome ?? contato.telefone}. Confira e entregue manualmente em Conversas.`,
+              link: "/conversas",
+            });
+          }
+        }
+      } finally {
+        await soltar(pg.contato_id);
+      }
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  // contato ocupado demais: deixa o relógio continuar daqui
+  await db.from("agendamentos").insert({ dono_id: pg.dono_id, contato_id: pg.contato_id, tipo: "pix_pago", dados: { pagamento_id: pg.id }, executar_em: new Date(Date.now() + 5000).toISOString() });
+  return true;
+}
+
+// Aviso do PagBank (?d=dono&s=segredo). Não confia no corpo: consulta o pedido na API.
+async function avisoPagBank(req: Request, cfg: Record<string, string>) {
+  const u = new URL(req.url);
+  const donoId = u.searchParams.get("d") ?? "";
+  const corpo = await req.json().catch(() => ({}));
+  const gw = /^[0-9a-f-]{36}$/.test(donoId) ? await configGateway(db, donoId) : null;
+  if (!gw || u.searchParams.get("s") !== gw.segredo_webhook) return json({ erro: "aviso inválido" }, 401);
+  const pedidoId = String(corpo?.id ?? "");
+  if (!pedidoId.startsWith("ORDE_")) return json({ ok: true, ignorado: true });
+  const { data: pg } = await db.from("pagamentos").select("id, status").eq("dono_id", donoId).eq("gateway_id", pedidoId).maybeSingle();
+  if (!pg || pg.status === "pago") return json({ ok: true });
+  const r = await pedidoPago(gw, pedidoId);
+  if (r.pago) await confirmarPagamento(pg.id, cfg);
+  return json({ ok: true, pago: r.pago });
+}
+
+// Confere no PagBank os Pix pendentes (rede de segurança se o aviso se perder)
+async function conferirPendentes(cfg: Record<string, string>) {
+  const agora = new Date();
+  const { data: pendentes } = await db
+    .from("pagamentos")
+    .select("id, dono_id, gateway_id, criado_em")
+    .eq("status", "pendente")
+    .eq("gateway", "pagbank")
+    .not("gateway_id", "is", null)
+    .lte("verificar_em", agora.toISOString())
+    .order("verificar_em")
+    .limit(8);
+  let pagos = 0;
+  for (const p of pendentes ?? []) {
+    const idadeMin = (agora.getTime() - new Date(p.criado_em).getTime()) / 60_000;
+    // confere a cada 1 min na 1ª hora, depois a cada 10 min, e para depois de 2 dias
+    const prox = idadeMin > 2880 ? null : new Date(agora.getTime() + (idadeMin < 60 ? 60_000 : 600_000)).toISOString();
+    await db.from("pagamentos").update({ verificar_em: prox }).eq("id", p.id);
+    try {
+      const gw = await configGateway(db, p.dono_id);
+      if (!gw) continue;
+      const r = await pedidoPago(gw, p.gateway_id);
+      if (r.pago && (await confirmarPagamento(p.id, cfg))) pagos++;
+    } catch (e) {
+      console.error("conferir Pix", p.id, e);
+    }
+  }
+  return pagos;
 }
 
 // Resposta manual pelo painel (tela Conversas)
@@ -404,7 +500,9 @@ async function relogio(req: Request, cfg: Record<string, string>) {
       const contato = await carregarContato(a.contato_id);
       if (!contato) continue;
       const ctx = ctxPara(a.dono_id, contato.simulacao, cfg);
-      if (a.tipo === "reprocessar") {
+      if (a.tipo === "pix_pago") {
+        await M.pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
+      } else if (a.tipo === "reprocessar") {
         await M.receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato), String(a.dados?.texto ?? ""));
       } else {
         await M.executarAgendamento(ctx, contato, a.tipo, a.dados ?? {});
@@ -422,7 +520,13 @@ async function relogio(req: Request, cfg: Record<string, string>) {
   } catch (e) {
     console.error("erro nos disparos", e);
   }
-  return json({ ok: true, feitos, disparos });
+  let pagos = 0;
+  try {
+    pagos = await conferirPendentes(cfg);
+  } catch (e) {
+    console.error("erro ao conferir Pix", e);
+  }
+  return json({ ok: true, feitos, disparos, pagos });
 }
 
 /* ------------------------------------------------------------------ */
@@ -435,9 +539,11 @@ Deno.serve(async (req) => {
     if (rota === "/numeros" && req.method === "POST") return await numeros(req);
     if (rota === "/enviar" && req.method === "POST") return await enviarManual(req);
     if (rota === "/ia" && req.method === "POST") return await rotaIA(req);
+    if (rota === "/gateway" && req.method === "POST") return await gateway(req);
     const cfg = await configMotor(db);
     if (rota === "/evolution" && req.method === "POST") return await evolution(req, cfg);
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);
+    if (rota === "/pagbank" && req.method === "POST") return await avisoPagBank(req, cfg);
     return json({ erro: "rota não encontrada" }, 404);
   } catch (e) {
     console.error(e);

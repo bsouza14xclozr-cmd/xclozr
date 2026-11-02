@@ -1,5 +1,6 @@
 // Liga o cérebro ao banco Supabase (com a chave de serviço, sempre filtrando pelo dono)
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { configGateway, criarPixPagBank } from "./gateway.ts";
 import type { Contato, Evento, Funil, PatchContato, Produto, Saida, Store } from "./motor.ts";
 
 export const CAMPOS_CONTATO =
@@ -97,7 +98,8 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
       const { data: cfg } = await db.from("configuracoes").select("taxa_percentual, taxa_fixa_centavos").eq("dono_id", donoId).maybeSingle();
       const taxa = cfg ? Math.round((produto.preco_centavos * Number(cfg.taxa_percentual)) / 100) + (cfg.taxa_fixa_centavos ?? 0) : 0;
 
-      // TODO (próxima etapa): gerar Pix real no Mercado Pago quando não for simulação
+      const gw = c.simulacao ? null : await configGateway(db, donoId);
+      if (!c.simulacao && !gw) throw new Error("nenhum gateway conectado (Produtos → Gateway de Pix)");
       const { data: anuncio } = await db.from("contatos").select("anuncio_id").eq("id", c.id).maybeSingle();
       const { data, error } = await db
         .from("pagamentos")
@@ -110,18 +112,36 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
           valor_centavos: produto.preco_centavos,
           taxa_centavos: taxa,
           status: "pendente",
-          gateway: c.simulacao ? "simulacao" : null,
+          gateway: c.simulacao ? "simulacao" : gw!.gateway,
           simulacao: c.simulacao,
         })
         .select("id")
         .single();
       if (error || !data) throw new Error("falha ao criar pagamento");
-      const copiaCola = c.simulacao
-        ? `00020126SIMULACAO-XCLOZR-${data.id.slice(0, 8)}5204000053039865802BR (Pix de teste, não pague)`
-        : `Pix indisponível: conecte o gateway no XClozr`;
-      await db.from("pagamentos").update({ pix_copia_cola: copiaCola }).eq("id", data.id);
-      void expiraMin;
-      return { id: data.id, copiaCola };
+      if (c.simulacao) {
+        const copiaCola = `00020126SIMULACAO-XCLOZR-${data.id.slice(0, 8)}5204000053039865802BR (Pix de teste, não pague)`;
+        await db.from("pagamentos").update({ pix_copia_cola: copiaCola }).eq("id", data.id);
+        return { id: data.id, copiaCola };
+      }
+      try {
+        const pix = await criarPixPagBank(gw!, donoId, {
+          referencia: data.id,
+          descricao: produto.nome,
+          valorCentavos: produto.preco_centavos,
+          expiraMin,
+          nome: c.nome,
+          telefone: c.telefone,
+        });
+        await db
+          .from("pagamentos")
+          .update({ pix_copia_cola: pix.copiaCola, gateway_id: pix.pedidoId, verificar_em: new Date(Date.now() + 60_000).toISOString() })
+          .eq("id", data.id);
+        return { id: data.id, copiaCola: pix.copiaCola };
+      } catch (e) {
+        await db.from("pagamentos").delete().eq("id", data.id);
+        await db.from("gateway_config").update({ erro: String((e as Error).message).slice(0, 300) }).eq("dono_id", donoId);
+        throw e;
+      }
     },
 
     async pagamentoPendente(c) {

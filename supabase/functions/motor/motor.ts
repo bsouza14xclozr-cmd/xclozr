@@ -381,7 +381,20 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
       const anterior = no(funil, (funil.grafo.edges.find((e) => e.target === n.id)?.source) ?? "");
       const tipoPix = anterior?.data.tipo === "upsell" ? "upsell" : "principal";
       const expira = minutos(cfg.expiraMin, 1440);
-      const pix = await ctx.store.criarPix(c, produto, expira, tipoPix);
+      let pix: Awaited<ReturnType<Store["criarPix"]>>;
+      try {
+        pix = await ctx.store.criarPix(c, produto, expira, tipoPix);
+      } catch (e) {
+        // não deixa o cliente sem resposta: avisa, passa para humano e alerta o dono
+        ctx.log?.(`falha ao gerar Pix: ${(e as Error).message}`);
+        await enviarTexto(ctx, c, "Só um instante, já te mando o Pix 🙏");
+        await patch(ctx, c, { robo_ativo: false });
+        await ctx.store.avisarDono(
+          c,
+          `Não consegui gerar o Pix de ${brl(produto.preco_centavos)} para {nome} ({telefone}): ${(e as Error).message}. O robô pausou nessa conversa — mande o Pix manualmente em Conversas.`.replace("{nome}", c.nome ?? "o cliente").replace("{telefone}", c.telefone),
+        );
+        return { parar: true, finalizar: true };
+      }
       await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: produto.nome, preco: brl(produto.preco_centavos) }));
       await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: 800 });
       await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix } });
