@@ -13,7 +13,7 @@ export type Config = Record<string, any>;
 export type No = { id: string; data: { tipo: string; config: Config } };
 export type Ligacao = { source: string; sourceHandle?: string | null; target: string };
 export type Grafo = { nodes: No[]; edges: Ligacao[] };
-export type Funil = { id: string; grafo: Grafo };
+export type Funil = { id: string; grafo: Grafo; ativo?: boolean };
 
 export type Aguardando = {
   bloco: string;
@@ -544,6 +544,17 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
     const f = (c.funil_id && (await ctx.store.funil(c.funil_id))) || (await funilPadrao());
     if (f) await iniciar(ctx, c, f);
     return;
+  }
+
+  // funil terminou e o cliente voltou a falar: recomeça se ele ainda não comprou
+  // ou se o funil dele foi pausado/apagado (você trocou de funil)
+  if (c.finalizado && !c.aguardando && !c.pix_ativo) {
+    const atual = await ctx.store.funil(c.funil_id);
+    if (!atual || atual.ativo === false || !(await ctx.store.jaComprou(c))) {
+      const f = await funilPadrao();
+      if (f) await iniciar(ctx, c, f);
+      return;
+    }
   }
 
   const funil = await ctx.store.funil(c.funil_id);

@@ -38,8 +38,8 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
 
     async funil(id) {
       if (cacheFunis.has(id)) return cacheFunis.get(id)!;
-      const { data } = await db.from("funis").select("id, grafo").eq("id", id).eq("dono_id", donoId).maybeSingle();
-      const f = data ? ({ id: data.id, grafo: data.grafo } as Funil) : null;
+      const { data } = await db.from("funis").select("id, grafo, ativo").eq("id", id).eq("dono_id", donoId).maybeSingle();
+      const f = data ? ({ id: data.id, grafo: data.grafo, ativo: data.ativo } as Funil) : null;
       cacheFunis.set(id, f);
       return f;
     },
