@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, PageHeader } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
 import { AbaAgente, AbaRegras } from "./RegrasAgente";
+import { AbaConversoes } from "./Conversoes";
 import { POR_ID, PersonalizarColunas, somaDe, somar, useColunas } from "./colunas";
 import { PERIODOS, chamarTrafego, intervaloDias, relatorio, type Linha, type Nivel, type Periodo, type StatusMeta } from "./api";
 
@@ -266,11 +267,12 @@ function Orcamento({ linha, nivel, onSalvar }: { linha: Linha; nivel: Nivel; onS
   );
 }
 
-type Aba = "relatorio" | "regras" | "agente";
+type Aba = "relatorio" | "regras" | "agente" | "conversoes";
 const ABAS_PAGINA: { v: Aba; nome: string }[] = [
   { v: "relatorio", nome: "📊 Relatório" },
   { v: "regras", nome: "⚡ Regras automáticas" },
   { v: "agente", nome: "🤖 Agente IA" },
+  { v: "conversoes", nome: "📡 API de Conversões" },
 ];
 
 export function AnunciosCliente() {
@@ -315,7 +317,7 @@ export function AnunciosCliente() {
   useEffect(() => {
     const a = new URLSearchParams(window.location.search).get("aba");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- aba vinda do link (?aba=agente)
-    if (a === "regras" || a === "agente") setAba(a);
+    if (a === "regras" || a === "agente" || a === "conversoes") setAba(a);
   }, []);
 
   function trocarAba(a: Aba) {
@@ -454,6 +456,7 @@ export function AnunciosCliente() {
 
       {aba === "regras" && <AbaRegras conectado={status.conectado} />}
       {aba === "agente" && <AbaAgente conectado={status.conectado} />}
+      {aba === "conversoes" && <AbaConversoes />}
 
       {aba === "relatorio" && erro && <p className="text-sm text-vermelho">{erro}</p>}
       {aba === "relatorio" && status.erro && (
