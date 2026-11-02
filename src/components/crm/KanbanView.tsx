@@ -1,15 +1,38 @@
 "use client";
 
-import { useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { brl } from "@/lib/dinheiro";
-import { EVENTOS, nomeContato, tempoRelativo, type Contato } from "@/lib/crm/tipos";
+import {
+  EVENTOS,
+  nomeContato,
+  tempoRelativo,
+  type Contato,
+} from "@/lib/crm/tipos";
 import type { Crm } from "@/lib/crm/useCrm";
 import { AbasCrm, EtiquetaChip, inputCls } from "./comum";
 import { FichaContato } from "./FichaContato";
 
-type DadosKanban = Pick<Crm, "colunas" | "etiquetas" | "campos" | "contatos" | "carregando" | "erro" | "aoVivo" | "atualizarContato">;
+type DadosKanban = Pick<
+  Crm,
+  | "colunas"
+  | "etiquetas"
+  | "campos"
+  | "contatos"
+  | "carregando"
+  | "erro"
+  | "aoVivo"
+  | "atualizarContato"
+>;
 
-function Cartao({ c, crm, onAbrir }: { c: Contato; crm: DadosKanban; onAbrir: () => void }) {
+function Cartao({
+  c,
+  crm,
+  onAbrir,
+}: {
+  c: Contato;
+  crm: DadosKanban;
+  onAbrir: () => void;
+}) {
   return (
     <li
       draggable
@@ -19,24 +42,51 @@ function Cartao({ c, crm, onAbrir }: { c: Contato; crm: DadosKanban; onAbrir: ()
       }}
       className="cursor-grab rounded-xl border border-borda bg-cartao p-3 shadow-sm hover:border-[#3a404c] active:cursor-grabbing"
     >
-      <button type="button" onClick={onAbrir} className="flex w-full flex-col gap-2 text-left">
+      <button
+        type="button"
+        onClick={onAbrir}
+        className="flex w-full flex-col gap-2 text-left"
+      >
         <span className="flex items-start justify-between gap-2">
-          <span className="truncate text-sm font-semibold">{nomeContato(c)}</span>
-          <span className="shrink-0 text-[11px] text-suave">{tempoRelativo(c.ultima_msg_em ?? c.criado_em)}</span>
+          <span className="truncate text-sm font-semibold">
+            {nomeContato(c)}
+          </span>
+          <span className="shrink-0 text-[11px] text-suave">
+            {tempoRelativo(c.ultima_msg_em ?? c.criado_em)}
+          </span>
         </span>
-        {c.anuncio_nome && <span className="truncate text-[11px] text-suave">via {c.anuncio_nome}</span>}
+        {c.anuncio_nome && (
+          <span className="truncate text-[11px] text-suave">
+            via {c.anuncio_nome}
+          </span>
+        )}
         {c.etiquetas.length > 0 && (
           <span className="flex flex-wrap gap-1">
             {c.etiquetas.slice(0, 4).map((n) => (
-              <EtiquetaChip key={n} nome={n} etiquetas={crm.etiquetas} pequeno />
+              <EtiquetaChip
+                key={n}
+                nome={n}
+                etiquetas={crm.etiquetas}
+                pequeno
+              />
             ))}
           </span>
         )}
         <span className="flex items-center justify-between gap-2 text-[11px]">
-          {c.total_pago_centavos > 0 ? <span className="font-semibold text-limao">{brl(c.total_pago_centavos)}</span> : <span className="text-suave">sem compras</span>}
+          {c.total_pago_centavos > 0 ? (
+            <span className="font-semibold text-limao">
+              {brl(c.total_pago_centavos)}
+            </span>
+          ) : (
+            <span className="text-suave">sem compras</span>
+          )}
           <span className="flex items-center gap-2">
-            {c.pix_pendente && <span className="font-semibold text-laranja">Pix pendente</span>}
-            {!c.robo_ativo && <span className="font-semibold text-vermelho">robô pausado</span>}
+            {c.pix_pendente && (
+              <span className="font-semibold text-laranja">Pix pendente</span>
+            )}
+            {!c.robo_ativo && (
+              <span className="font-semibold text-vermelho">robô pausado</span>
+            )}
           </span>
         </span>
       </button>
@@ -54,30 +104,68 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
     const b = busca.trim().toLowerCase();
     return crm.contatos.filter(
       (c) =>
-        (!b || nomeContato(c).toLowerCase().includes(b) || c.telefone.includes(b.replace(/\D/g, "") || "§")) &&
+        (!b ||
+          nomeContato(c).toLowerCase().includes(b) ||
+          c.telefone.includes(b.replace(/\D/g, "") || "§")) &&
         (!filtroEtiqueta || c.etiquetas.includes(filtroEtiqueta)),
     );
   }, [crm.contatos, busca, filtroEtiqueta]);
 
-  const semColuna = filtrados.filter((c) => !c.kanban_coluna_id || !crm.colunas.some((k) => k.id === c.kanban_coluna_id));
+  const semColuna = filtrados.filter(
+    (c) =>
+      !c.kanban_coluna_id ||
+      !crm.colunas.some((k) => k.id === c.kanban_coluna_id),
+  );
   const colunasVisiveis = [
-    ...(semColuna.length ? [{ id: "", nome: "Sem coluna", cor: "#a3aab6", ordem: -1, evento: null }] : []),
+    ...(semColuna.length
+      ? [
+          {
+            id: "",
+            nome: "Sem coluna",
+            cor: "#a3aab6",
+            ordem: -1,
+            evento: null,
+          },
+        ]
+      : []),
     ...crm.colunas,
   ];
   const contatoAberto = crm.contatos.find((c) => c.id === aberto) ?? null;
+
+  const quadro = useRef<HTMLDivElement>(null);
+  const [rolagem, setRolagem] = useState({ esq: false, dir: false });
+  const medir = () => {
+    const el = quadro.current;
+    if (el)
+      setRolagem({
+        esq: el.scrollLeft > 4,
+        dir: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+      });
+  };
+  useEffect(() => {
+    medir();
+    window.addEventListener("resize", medir);
+    return () => window.removeEventListener("resize", medir);
+  }, [crm.colunas.length, crm.carregando]);
+  const rolar = (lado: 1 | -1) =>
+    quadro.current?.scrollBy({ left: lado * 300, behavior: "smooth" });
 
   const soltar = (e: DragEvent, colunaId: string) => {
     e.preventDefault();
     setSobre(null);
     const id = e.dataTransfer.getData("text/contato");
-    if (id) void crm.atualizarContato(id, { kanban_coluna_id: colunaId || null });
+    if (id)
+      void crm.atualizarContato(id, { kanban_coluna_id: colunaId || null });
   };
 
   return (
     <>
       <header className="flex flex-col gap-1.5">
         <h1 className="font-titulo text-3xl font-bold tracking-tight">CRM</h1>
-        <p className="text-sm text-suave">Os contatos mudam de coluna sozinhos conforme a conversa avança. Você também pode arrastar.</p>
+        <p className="text-sm text-suave">
+          Os contatos mudam de coluna sozinhos conforme a conversa avança. Você
+          também pode arrastar.
+        </p>
       </header>
 
       <AbasCrm atual="kanban" aoVivo={crm.aoVivo} />
@@ -86,11 +174,23 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
         <label htmlFor="busca-kanban" className="sr-only">
           Buscar contato
         </label>
-        <input id="busca-kanban" type="search" className={`${inputCls} max-w-xs`} placeholder="Buscar por nome ou telefone" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <input
+          id="busca-kanban"
+          type="search"
+          className={`${inputCls} max-w-xs`}
+          placeholder="Buscar por nome ou telefone"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
         <label htmlFor="filtro-etiqueta" className="sr-only">
           Filtrar por etiqueta
         </label>
-        <select id="filtro-etiqueta" className={`${inputCls} max-w-[220px]`} value={filtroEtiqueta} onChange={(e) => setFiltroEtiqueta(e.target.value)}>
+        <select
+          id="filtro-etiqueta"
+          className={`${inputCls} max-w-[220px]`}
+          value={filtroEtiqueta}
+          onChange={(e) => setFiltroEtiqueta(e.target.value)}
+        >
           <option value="">Todas as etiquetas</option>
           {crm.etiquetas.map((e) => (
             <option key={e.id} value={e.nome}>
@@ -104,55 +204,106 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
       {crm.carregando && <p className="text-sm text-suave">Carregando…</p>}
 
       {!crm.carregando && (
-        <div className="-mx-5 overflow-x-auto px-5 pb-4 md:-mx-10 md:px-10">
-          <div className="flex min-w-max gap-4">
-            {colunasVisiveis.map((col) => {
-              const itens = col.id ? filtrados.filter((c) => c.kanban_coluna_id === col.id) : semColuna;
-              const total = itens.reduce((s, c) => s + c.total_pago_centavos, 0);
-              const evento = EVENTOS.find((e) => e.valor === col.evento);
-              return (
-                <section
-                  key={col.id || "sem"}
-                  aria-label={`Coluna ${col.nome}`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setSobre(col.id || "sem");
-                  }}
-                  onDragLeave={() => setSobre(null)}
-                  onDrop={(e) => soltar(e, col.id)}
-                  className={`flex w-72 shrink-0 flex-col gap-3 rounded-2xl border p-3 transition ${
-                    sobre === (col.id || "sem") ? "border-limao bg-limao-escuro/40" : "border-borda bg-lateral"
-                  }`}
-                >
-                  <div className="flex flex-col gap-1 px-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="flex items-center gap-2 text-sm font-semibold">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: col.cor }} />
-                        {col.nome}
-                      </h2>
-                      <span className="rounded-full bg-elevado px-2 py-0.5 text-[11px] font-semibold text-suave">{itens.length}</span>
+        <div className="relative">
+          {rolagem.esq && (
+            <button
+              type="button"
+              onClick={() => rolar(-1)}
+              aria-label="Ver colunas da esquerda"
+              className="absolute left-1 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-borda bg-cartao text-lg shadow-lg hover:bg-elevado"
+            >
+              ‹
+            </button>
+          )}
+          {rolagem.dir && (
+            <button
+              type="button"
+              onClick={() => rolar(1)}
+              aria-label="Ver mais colunas"
+              className="absolute right-1 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-borda bg-cartao text-lg shadow-lg hover:bg-elevado"
+            >
+              ›
+            </button>
+          )}
+          <div
+            ref={quadro}
+            onScroll={medir}
+            className="overflow-x-auto pb-3"
+            style={{ height: "max(420px, calc(100vh - 290px))" }}
+          >
+            <div className="flex h-full min-w-max gap-4">
+              {colunasVisiveis.map((col) => {
+                const itens = col.id
+                  ? filtrados.filter((c) => c.kanban_coluna_id === col.id)
+                  : semColuna;
+                const total = itens.reduce(
+                  (s, c) => s + c.total_pago_centavos,
+                  0,
+                );
+                const evento = EVENTOS.find((e) => e.valor === col.evento);
+                return (
+                  <section
+                    key={col.id || "sem"}
+                    aria-label={`Coluna ${col.nome}`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setSobre(col.id || "sem");
+                    }}
+                    onDragLeave={() => setSobre(null)}
+                    onDrop={(e) => soltar(e, col.id)}
+                    className={`flex h-full w-64 shrink-0 flex-col gap-3 rounded-2xl border p-3 transition ${
+                      sobre === (col.id || "sem")
+                        ? "border-limao bg-limao-escuro/40"
+                        : "border-borda bg-lateral"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-1 px-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="flex items-center gap-2 text-sm font-semibold">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: col.cor }}
+                          />
+                          {col.nome}
+                        </h2>
+                        <span className="rounded-full bg-elevado px-2 py-0.5 text-[11px] font-semibold text-suave">
+                          {itens.length}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-suave">
+                        {evento
+                          ? `Automático: ${evento.nome.toLowerCase()}`
+                          : "Manual"}
+                        {total > 0 && <> · {brl(total)}</>}
+                      </span>
                     </div>
-                    <span className="text-[11px] text-suave">
-                      {evento ? `Automático: ${evento.nome.toLowerCase()}` : "Manual"}
-                      {total > 0 && <> · {brl(total)}</>}
-                    </span>
-                  </div>
-                  <ul className="flex min-h-24 flex-col gap-2">
-                    {itens.map((c) => (
-                      <Cartao key={c.id} c={c} crm={crm} onAbrir={() => setAberto(c.id)} />
-                    ))}
-                    {itens.length === 0 && <li className="rounded-xl border border-dashed border-borda p-4 text-center text-xs text-suave">Arraste contatos para cá</li>}
-                  </ul>
-                </section>
-              );
-            })}
+                    <ul className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                      {itens.map((c) => (
+                        <Cartao
+                          key={c.id}
+                          c={c}
+                          crm={crm}
+                          onAbrir={() => setAberto(c.id)}
+                        />
+                      ))}
+                      {itens.length === 0 && (
+                        <li className="rounded-xl border border-dashed border-borda p-4 text-center text-xs text-suave">
+                          Arraste contatos para cá
+                        </li>
+                      )}
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
 
       {!crm.carregando && crm.contatos.length === 0 && (
         <p className="text-sm text-suave">
-          Ainda não há contatos. Quando o robô começar a atender, cada cliente aparece aqui na hora e vai mudando de coluna sozinho.
+          Ainda não há contatos. Quando o robô começar a atender, cada cliente
+          aparece aqui na hora e vai mudando de coluna sozinho.
         </p>
       )}
 
