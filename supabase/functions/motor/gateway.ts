@@ -37,8 +37,11 @@ async function chamar(cfg: ConfigGateway, metodo: "GET" | "POST", caminho: strin
     /* corpo vazio ou html */
   }
   if (!r.ok) {
-    const msg = j.error_messages?.map((e) => [e.parameter_name, e.description].filter(Boolean).join(": ")).join("; ");
-    const erro = new Error(r.status === 401 || r.status === 403 ? "token recusado pelo PagBank (confira se copiou o token certo e o ambiente)" : msg || `PagBank respondeu ${r.status}`);
+    const msg = (j.error_messages?.map((e) => [e.code, e.parameter_name, e.description].filter(Boolean).join(": ")).join("; ") || texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).slice(0, 220);
+    let explicacao = msg || "sem detalhes";
+    if (r.status === 401) explicacao = `token inválido para o ambiente ${cfg.ambiente === "sandbox" ? "Sandbox" : "Produção"} (${msg || "UNAUTHORIZED"})`;
+    else if (r.status === 403 && /whitelist|allowlist|access_denied|não autorizad/i.test(msg)) explicacao = `sua conta ainda não está liberada para gerar Pix pela API (${msg})`;
+    const erro = new Error(`PagBank recusou (${r.status}): ${explicacao}`);
     (erro as Error & { parametros?: string }).parametros = (j.error_messages ?? []).map((e) => e.parameter_name ?? "").join(",");
     throw erro;
   }

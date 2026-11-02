@@ -10,7 +10,7 @@ const inputCls =
   "w-full min-h-11 rounded-[10px] border border-borda bg-fundo px-3 text-sm text-texto placeholder:text-suave/70 focus:border-limao focus:outline-none";
 
 async function chamar<T>(corpo: Record<string, unknown>): Promise<T> {
-  const { data, error } = await createClient().functions.invoke("motor/gateway", { body: corpo });
+  const { data, error } = await createClient().functions.invoke("pagamentos", { body: corpo });
   if (error) {
     let msg = "Algo deu errado.";
     try {
