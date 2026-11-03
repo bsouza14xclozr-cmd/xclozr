@@ -150,7 +150,7 @@ export function Sidebar({ email }: { email: string | null }) {
       className="flex w-full flex-col gap-1 border-b border-borda bg-lateral p-4 md:min-h-screen md:w-60 md:shrink-0 md:border-r md:border-b-0 md:px-4 md:py-6"
     >
       <div className="flex items-center justify-between gap-2 pr-1 pb-4 pl-3 md:pb-6">
-        <Image src="/xclozr-logo.png" alt="XClozr" width={667} height={245} priority className="h-11 w-auto" />
+        <Image src="/xclozr-logo.png" alt="XClozr" width={1000} height={364} priority className="h-11 w-auto" />
         {email && <Sininho />}
       </div>
 

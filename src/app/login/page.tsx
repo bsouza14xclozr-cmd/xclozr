@@ -10,7 +10,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center px-5">
       <div className="flex w-full max-w-sm flex-col gap-6 rounded-2xl border border-borda bg-cartao p-8">
         <div className="flex flex-col gap-2">
-          <Image src="/xclozr-logo.png" alt="XClozr" width={667} height={245} priority className="h-16 w-auto self-start" />
+          <Image src="/xclozr-logo.png" alt="XClozr" width={1000} height={364} priority className="h-16 w-auto self-start" />
           <span className="text-xs font-medium text-suave">Assistente de Vendas &amp; Anúncios</span>
         </div>
         <div className="flex flex-col gap-1">
