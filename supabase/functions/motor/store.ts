@@ -1,6 +1,6 @@
 // Liga o cérebro ao banco Supabase (com a chave de serviço, sempre filtrando pelo dono)
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { configGateway, criarPixPagBank } from "./gateway.ts";
+import { configGateway, criarCobrancaLivePix, criarPixPagBank } from "./gateway.ts";
 import type { Contato, Evento, Funil, PatchContato, Produto, Saida, Store } from "./motor.ts";
 
 export const CAMPOS_CONTATO =
@@ -124,6 +124,14 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
         return { id: data.id, copiaCola };
       }
       try {
+        if (gw!.gateway === "livepix") {
+          const lp = await criarCobrancaLivePix(db, gw!, donoId, { pagamentoId: data.id, valorCentavos: produto.preco_centavos });
+          await db
+            .from("pagamentos")
+            .update({ pix_copia_cola: lp.link, gateway_id: lp.referencia, verificar_em: new Date(Date.now() + 60_000).toISOString() })
+            .eq("id", data.id);
+          return { id: data.id, copiaCola: lp.link, link: lp.link };
+        }
         const pix = await criarPixPagBank(gw!, donoId, {
           referencia: data.id,
           descricao: produto.nome,

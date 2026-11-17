@@ -72,7 +72,7 @@ export interface Store {
   cancelarAgendamentos(c: Contato, tipos?: string[]): Promise<void>;
   registrarExecucao(c: Contato, funilId: string, blocoId: string, saida: string | null): Promise<void>;
   registrarMensagemRobo(c: Contato, s: Saida): Promise<void>;
-  criarPix(c: Contato, produto: Produto, expiraMin: number, tipo: "principal" | "upsell"): Promise<{ id: string; copiaCola: string; qrBase64?: string | null }>;
+  criarPix(c: Contato, produto: Produto, expiraMin: number, tipo: "principal" | "upsell"): Promise<{ id: string; copiaCola: string; qrBase64?: string | null; link?: string | null }>;
   pagamentoPendente(c: Contato): Promise<boolean>;
   jaComprou(c: Contato): Promise<boolean>;
   marcarPixExpirado(pagamentoId: string): Promise<void>;
@@ -402,7 +402,12 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         return { parar: true, finalizar: true };
       }
       await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: produto.nome, preco: brl(produto.preco_centavos) }));
-      await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: 800 });
+      if (pix.link) {
+        // gateway de link (LivePix): a página tem o Pix copia e cola e o QR Code
+        await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):\n${pix.link}`, esperaMs: 800 });
+      } else {
+        await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: 800 });
+      }
       await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix } });
       await ctx.store.cancelarAgendamentos(c, ["pix_nao_pagou", "pix_expirou"]);
       await ctx.store.agendar(c, "pix_nao_pagou", addMin(ctx.store.agora(), minutos(cfg.esperarMin, 15)), { bloco: n.id, pagamento_id: pix.id });

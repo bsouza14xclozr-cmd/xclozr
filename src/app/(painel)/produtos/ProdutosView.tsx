@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Card, EmptyState } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
-import { ConexaoPagBank } from "./ConexaoGateway";
+import { ConexaoLivePix, ConexaoPagBank } from "./ConexaoGateway";
 
 export type EntregaTipo = "link" | "arquivo" | "codigo";
 
@@ -23,7 +23,7 @@ export type Produto = {
 
 export type NovoProduto = Omit<Produto, "id">;
 
-export type Gateway = "mercadopago" | "asaas" | "efi" | "pagbank" | "outro";
+export type Gateway = "mercadopago" | "asaas" | "efi" | "pagbank" | "livepix" | "outro";
 
 export type ConfigPagamento = {
   gateway: Gateway | null;
@@ -36,6 +36,7 @@ export const GATEWAYS: { valor: Gateway; nome: string }[] = [
   { valor: "asaas", nome: "Asaas" },
   { valor: "efi", nome: "Efí (Gerencianet)" },
   { valor: "pagbank", nome: "PagBank" },
+  { valor: "livepix", nome: "LivePix" },
   { valor: "outro", nome: "Outro" },
 ];
 
@@ -156,9 +157,11 @@ function CartaoGateway({
 
       {gateway === "pagbank" ? (
         <ConexaoPagBank />
+      ) : gateway === "livepix" ? (
+        <ConexaoLivePix />
       ) : gateway ? (
         <p className="rounded-xl border border-[#5a4220] bg-[#241b0e] px-4 py-3 text-sm text-laranja">
-          Por enquanto o robô gera Pix de verdade só pelo PagBank. Este gateway serve só para calcular as taxas no lucro.
+          Por enquanto o robô gera Pix de verdade só pelo PagBank ou pela LivePix. Este gateway serve só para calcular as taxas no lucro.
         </p>
       ) : null}
       <p className="text-xs text-suave">Confira a taxa do Pix no app ou site do seu gateway e coloque aqui, para o lucro sair certo.</p>

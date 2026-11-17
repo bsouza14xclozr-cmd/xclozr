@@ -128,3 +128,112 @@ export function ConexaoPagBank() {
     </div>
   );
 }
+
+// Conexão com a LivePix: Client ID e Client Secret vão direto para o servidor do robô e nunca voltam para o navegador.
+export function ConexaoLivePix() {
+  const [status, setStatus] = useState<(Status & { gateway?: string }) | null>(null);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [trocar, setTrocar] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      setStatus(await chamar<Status & { gateway?: string }>({ acao: "status" }));
+    } catch {
+      setStatus({ conectado: false });
+    }
+  }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carrega ao abrir
+    void carregar();
+  }, [carregar]);
+
+  async function conectar(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setOcupado(true);
+    try {
+      await chamar({ acao: "conectar", gateway: "livepix", client_id: clientId, client_secret: clientSecret });
+      setClientId("");
+      setClientSecret("");
+      setTrocar(false);
+      setMsg({ ok: true, texto: "LivePix conectada! O robô já manda o link do Pix e entrega sozinho quando o pagamento cai." });
+      await carregar();
+    } catch (err) {
+      setMsg({ ok: false, texto: (err as Error).message });
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function remover() {
+    if (!window.confirm("Desconectar a LivePix? O robô para de gerar Pix até você conectar de novo.")) return;
+    await chamar({ acao: "remover" });
+    await carregar();
+  }
+
+  if (!status) return <p className="text-sm text-suave">Carregando conexão…</p>;
+
+  const conectadaAqui = status.conectado && status.gateway === "livepix";
+  const mostrarForm = !conectadaAqui || trocar;
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-borda bg-fundo p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <b className="text-sm">Conexão com a LivePix</b>
+        {conectadaAqui ? (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${status.erro ? "bg-[#241b0e] text-laranja" : "bg-limao/15 text-limao"}`}>
+            {status.erro ? "● Conectada, com erro" : "● Conectada"}
+          </span>
+        ) : (
+          <span className="rounded-full border border-[#5a4220] bg-[#241b0e] px-2.5 py-1 text-xs font-semibold text-laranja">● Não conectada</span>
+        )}
+      </div>
+
+      {conectadaAqui && status.erro && <p className="text-sm text-laranja">Último erro ao gerar Pix: {status.erro}</p>}
+      {status.conectado && status.gateway && status.gateway !== "livepix" && (
+        <p className="text-sm text-laranja">Hoje o robô usa o {status.gateway === "pagbank" ? "PagBank" : status.gateway}. Conectar a LivePix substitui essa conexão.</p>
+      )}
+
+      {mostrarForm ? (
+        <>
+          <ol className="flex flex-col gap-1.5 text-sm text-suave">
+            <li>
+              1. Entre em <b className="text-texto">dashboard.livepix.gg</b> → <b className="text-texto">Configurações</b> → <b className="text-texto">API</b> →{" "}
+              <b className="text-texto">Criar aplicação</b>.
+            </li>
+            <li>
+              2. Marque as permissões de <b className="text-texto">pagamentos</b> (ler e criar) e de <b className="text-texto">webhooks</b>, salve e copie o{" "}
+              <b className="text-texto">Client ID</b> e o <b className="text-texto">Client Secret</b>.
+            </li>
+            <li>3. Cole os dois abaixo. Eu testo criando um link de R$ 1,00 (ninguém precisa pagar) e cadastro o aviso de pagamento automático.</li>
+          </ol>
+          <form onSubmit={conectar} className="flex flex-col gap-3 sm:flex-row">
+            <input className={inputCls} value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Client ID" autoComplete="off" required />
+            <input className={inputCls} type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="Client Secret" autoComplete="off" required />
+            <button type="submit" disabled={ocupado} className="min-h-11 shrink-0 rounded-[10px] bg-limao px-5 text-sm font-bold text-fundo hover:brightness-110 disabled:opacity-60">
+              {ocupado ? "Testando…" : "Testar e conectar"}
+            </button>
+          </form>
+          {trocar && (
+            <button type="button" onClick={() => setTrocar(false)} className="self-start text-xs text-suave hover:text-texto">
+              cancelar
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-suave">O robô manda o link do Pix da LivePix e entrega sozinho quando o pagamento cai.</span>
+          <button type="button" onClick={() => setTrocar(true)} className="text-limao hover:underline">
+            Trocar credenciais
+          </button>
+          <button type="button" onClick={() => void remover()} className="text-suave hover:text-vermelho">
+            Desconectar
+          </button>
+        </div>
+      )}
+      {msg && <p className={`text-sm ${msg.ok ? "text-limao" : "text-vermelho"}`}>{msg.texto}</p>}
+    </div>
+  );
+}

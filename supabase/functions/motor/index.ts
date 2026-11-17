@@ -12,7 +12,7 @@ import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
 import { rotasNumeros } from "./numeros.ts";
 import { MODELO_PADRAO, responderIA, testarIA, type Provedor } from "./ia.ts";
 import { ETIQUETA_SAIR, ehPedidoSair, processarDisparos } from "./disparos.ts";
-import { configGateway, pedidoPago, rotaGateway } from "./gateway.ts";
+import { cobrancaLivePixPaga, configGateway, pagamentoLivePix, pedidoPago, rotaGateway, type ConfigGateway } from "./gateway.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -187,14 +187,61 @@ async function avisoPagBank(req: Request, cfg: Record<string, string>) {
   return json({ ok: true, pago: r.pago });
 }
 
-// Confere no PagBank os Pix pendentes (rede de segurança se o aviso se perder)
+// Pergunta ao gateway se o pagamento caiu (PagBank: pedido | LivePix: referência + valor)
+async function gatewayPago(gw: ConfigGateway, donoId: string, gatewayId: string, valorCentavos: number) {
+  if (gw.gateway === "livepix") return await cobrancaLivePixPaga(db, gw, donoId, gatewayId, valorCentavos);
+  return (await pedidoPago(gw, gatewayId)).pago;
+}
+
+// Aviso da LivePix (?d=dono&s=segredo). O corpo só traz ids: confere tudo na API.
+async function avisoLivePix(req: Request, cfg: Record<string, string>) {
+  const u = new URL(req.url);
+  const donoId = u.searchParams.get("d") ?? "";
+  const corpo = await req.json().catch(() => ({}));
+  const gw = /^[0-9a-f-]{36}$/.test(donoId) ? await configGateway(db, donoId) : null;
+  if (!gw || gw.gateway !== "livepix" || u.searchParams.get("s") !== gw.segredo_webhook) return json({ erro: "aviso inválido" }, 401);
+  const recurso = (corpo?.resource ?? {}) as { id?: string; reference?: string; type?: string };
+  if (recurso.type !== "payment") return json({ ok: true, ignorado: true });
+  let ref = String(recurso.reference ?? "");
+  if (!ref && recurso.id) ref = (await pagamentoLivePix(db, gw, donoId, String(recurso.id)))?.reference ?? "";
+  if (!ref) return json({ ok: true, ignorado: true });
+  const { data: pg } = await db.from("pagamentos").select("id, status, valor_centavos").eq("dono_id", donoId).eq("gateway", "livepix").eq("gateway_id", ref).maybeSingle();
+  if (!pg || pg.status === "pago") return json({ ok: true });
+  const pago = await cobrancaLivePixPaga(db, gw, donoId, ref, pg.valor_centavos);
+  if (pago) await confirmarPagamento(pg.id, cfg);
+  return json({ ok: true, pago });
+}
+
+// Volta da página de pagamento da LivePix: confere na hora e devolve o cliente ao WhatsApp
+async function voltaLivePix(req: Request, cfg: Record<string, string>) {
+  const u = new URL(req.url);
+  const donoId = u.searchParams.get("d") ?? "";
+  const pagamentoId = u.searchParams.get("p") ?? "";
+  let destino = "https://wa.me/";
+  try {
+    const gw = /^[0-9a-f-]{36}$/.test(donoId) ? await configGateway(db, donoId) : null;
+    if (gw?.gateway === "livepix" && u.searchParams.get("s") === gw.segredo_webhook && /^[0-9a-f-]{36}$/.test(pagamentoId)) {
+      const { data: pg } = await db.from("pagamentos").select("id, status, valor_centavos, gateway_id, contato_id").eq("id", pagamentoId).eq("dono_id", donoId).maybeSingle();
+      const { data: ct } = pg ? await db.from("contatos").select("numero_id").eq("id", pg.contato_id).maybeSingle() : { data: null };
+      const { data: num } = ct?.numero_id ? await db.from("numeros").select("telefone").eq("id", ct.numero_id).maybeSingle() : { data: null };
+      const tel = String(num?.telefone ?? "").replace(/\D/g, "");
+      if (tel) destino = `https://wa.me/${tel}`;
+      if (pg && pg.status !== "pago" && pg.gateway_id && (await cobrancaLivePixPaga(db, gw, donoId, pg.gateway_id, pg.valor_centavos))) await confirmarPagamento(pg.id, cfg);
+    }
+  } catch (e) {
+    console.error("volta LivePix", e);
+  }
+  return new Response(null, { status: 302, headers: { location: destino } });
+}
+
+// Confere no gateway os Pix pendentes (rede de segurança se o aviso se perder)
 async function conferirPendentes(cfg: Record<string, string>) {
   const agora = new Date();
   const { data: pendentes } = await db
     .from("pagamentos")
-    .select("id, dono_id, gateway_id, criado_em")
+    .select("id, dono_id, gateway, gateway_id, valor_centavos, criado_em")
     .eq("status", "pendente")
-    .eq("gateway", "pagbank")
+    .in("gateway", ["pagbank", "livepix"])
     .not("gateway_id", "is", null)
     .lte("verificar_em", agora.toISOString())
     .order("verificar_em")
@@ -207,9 +254,8 @@ async function conferirPendentes(cfg: Record<string, string>) {
     await db.from("pagamentos").update({ verificar_em: prox }).eq("id", p.id);
     try {
       const gw = await configGateway(db, p.dono_id);
-      if (!gw) continue;
-      const r = await pedidoPago(gw, p.gateway_id);
-      if (r.pago && (await confirmarPagamento(p.id, cfg))) pagos++;
+      if (!gw || gw.gateway !== p.gateway) continue;
+      if ((await gatewayPago(gw, p.dono_id, p.gateway_id, p.valor_centavos)) && (await confirmarPagamento(p.id, cfg))) pagos++;
     } catch (e) {
       console.error("conferir Pix", p.id, e);
     }
@@ -544,6 +590,8 @@ Deno.serve(async (req) => {
     if (rota === "/evolution" && req.method === "POST") return await evolution(req, cfg);
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);
     if (rota === "/pagbank" && req.method === "POST") return await avisoPagBank(req, cfg);
+    if (rota === "/livepix" && req.method === "POST") return await avisoLivePix(req, cfg);
+    if (rota === "/livepix-volta" && req.method === "GET") return await voltaLivePix(req, cfg);
     return json({ erro: "rota não encontrada" }, 404);
   } catch (e) {
     console.error(e);
