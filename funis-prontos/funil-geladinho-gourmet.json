@@ -1,0 +1,470 @@
+{
+  "formato": "xclozr-funil",
+  "versao": 1,
+  "exportado_em": "2026-11-17T15:21:25.533674Z",
+  "nome": "Geladinho Gourmet R$ 15 (com áudios)",
+  "grafo": {
+    "nodes": [
+      {
+        "id": "inicio",
+        "type": "bloco",
+        "position": {
+          "x": 0,
+          "y": 300
+        },
+        "data": {
+          "tipo": "inicio",
+          "config": {}
+        }
+      },
+      {
+        "id": "m1_boas_vindas",
+        "type": "bloco",
+        "position": {
+          "x": 300,
+          "y": 300
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/geladinho/01-boas-vindas.mp3"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "p1_objetivo",
+        "type": "bloco",
+        "position": {
+          "x": 600,
+          "y": 300
+        },
+        "data": {
+          "tipo": "pergunta",
+          "config": {
+            "texto": "Me conta: você quer fazer o geladinho pra *vender* ou pra *sua família*? 😊",
+            "tipoResposta": "texto",
+            "salvarEm": "objetivo",
+            "esperarMin": 30,
+            "msgInvalida": "Pode me responder com uma palavrinha: vender ou família? 😊",
+            "tentativas": 2
+          }
+        }
+      },
+      {
+        "id": "m2_oferta",
+        "type": "bloco",
+        "position": {
+          "x": 900,
+          "y": 300
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/geladinho/02-oferta.mp3"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 4,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "📘 *Guia de Receitas de Geladinho Gourmet*\n\n✅ PDF enviado aqui no WhatsApp na hora\n✅ Passo a passo das receitas\n💰 Só *R$ 15* (pagamento único via Pix)\n\nPosso te mandar o Pix? É só responder *QUERO* 😉"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "o1_objecoes",
+        "type": "bloco",
+        "position": {
+          "x": 1200,
+          "y": 300
+        },
+        "data": {
+          "tipo": "objecoes",
+          "config": {
+            "palavrasCompra": "quero, sim, pix, bora, manda, como pago, eu quero, pode mandar, pode sim, quero sim",
+            "objecoes": [
+              {
+                "palavras": "golpe, confiável, confiavel, seguro, medo, verdade",
+                "resposta": "Pode ficar tranquilo(a)! 😊 O pagamento é por Pix e o guia chega aqui mesmo no WhatsApp assim que o pagamento confirmar. Posso te mandar o Pix?"
+              },
+              {
+                "palavras": "caro, desconto, valor, preço, preco, quanto",
+                "resposta": "O guia sai por só *R$ 15*, pagamento único 😉 Quer que eu te mande o Pix?"
+              },
+              {
+                "palavras": "como recebo, pdf, chega, entrega, como funciona, receber",
+                "resposta": "É um PDF: assim que o Pix confirmar, eu te mando aqui no WhatsApp na hora 📲 Quer receber?"
+              },
+              {
+                "palavras": "cartão, cartao, boleto, parcelar, crédito, credito",
+                "resposta": "Por enquanto o pagamento é só por Pix, que confirma na hora 😊 Posso gerar o seu?"
+              },
+              {
+                "palavras": "depois, mais tarde, agora não, agora nao, amanhã, amanha",
+                "resposta": "Sem problema! Se quiser, já te mando o Pix e você paga quando puder 😉"
+              }
+            ],
+            "naoEntendeu": "Posso te mandar o Pix agora? É só responder *QUERO* 😊",
+            "esperarMin": 120
+          }
+        }
+      },
+      {
+        "id": "pix1",
+        "type": "bloco",
+        "position": {
+          "x": 1500,
+          "y": 200
+        },
+        "data": {
+          "tipo": "pix",
+          "config": {
+            "produtoId": "prod_geladinho",
+            "texto": "Aqui está o seu Pix de *R$ 15* 👇\nAssim que o pagamento confirmar, eu te mando o guia na hora!",
+            "esperarMin": 15,
+            "expiraMin": 1440
+          }
+        }
+      },
+      {
+        "id": "e1_entrega",
+        "type": "bloco",
+        "position": {
+          "x": 1800,
+          "y": 50
+        },
+        "data": {
+          "tipo": "entregar",
+          "config": {
+            "produtoId": "prod_geladinho",
+            "texto": "Pagamento confirmado! ✅ Aqui está o seu guia:"
+          }
+        }
+      },
+      {
+        "id": "m6_pos_venda",
+        "type": "bloco",
+        "position": {
+          "x": 2100,
+          "y": 50
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Muito obrigada pela confiança! 🥰 É só abrir o PDF aqui em cima. Qualquer dúvida nas receitas, pode me chamar aqui mesmo. Bom proveito! 🍦"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "a1_cliente",
+        "type": "bloco",
+        "position": {
+          "x": 2400,
+          "y": 50
+        },
+        "data": {
+          "tipo": "acao",
+          "config": {
+            "acoes": [
+              {
+                "tipo": "etiqueta_add",
+                "valor": "comprou-geladinho"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "m3_lembrete_pix",
+        "type": "bloco",
+        "position": {
+          "x": 1800,
+          "y": 250
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Ei, passando aqui rapidinho… vi que o seu Pix ficou gerado mas ainda não caiu por aqui 👀\nFicou alguma dúvida? É só copiar o código que te mandei e pagar no app do seu banco. Assim que confirmar, o guia chega na hora! 😉"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "m5_pix_expirou",
+        "type": "bloco",
+        "position": {
+          "x": 1800,
+          "y": 450
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "Seu Pix expirou 😕 Quer que eu gere um novo? É só responder *QUERO*."
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "m4_recuperacao",
+        "type": "bloco",
+        "position": {
+          "x": 1500,
+          "y": 550
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Oi, sumiu! 😅 Sei que a correria é grande… só passando pra lembrar que o guia de geladinho gourmet continua saindo por *R$ 15*.\nSe ainda tiver interesse, me responde com *QUERO* que eu te mando o Pix 😉"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "o2_objecoes",
+        "type": "bloco",
+        "position": {
+          "x": 2100,
+          "y": 500
+        },
+        "data": {
+          "tipo": "objecoes",
+          "config": {
+            "palavrasCompra": "quero, sim, pix, bora, manda, como pago, eu quero, pode mandar, pode sim, quero sim",
+            "objecoes": [
+              {
+                "palavras": "golpe, confiável, confiavel, seguro, medo, verdade",
+                "resposta": "Pode ficar tranquilo(a)! 😊 O pagamento é por Pix e o guia chega aqui mesmo no WhatsApp assim que o pagamento confirmar. Posso te mandar o Pix?"
+              },
+              {
+                "palavras": "caro, desconto, valor, preço, preco, quanto",
+                "resposta": "O guia sai por só *R$ 15*, pagamento único 😉 Quer que eu te mande o Pix?"
+              },
+              {
+                "palavras": "como recebo, pdf, chega, entrega, como funciona, receber",
+                "resposta": "É um PDF: assim que o Pix confirmar, eu te mando aqui no WhatsApp na hora 📲 Quer receber?"
+              },
+              {
+                "palavras": "cartão, cartao, boleto, parcelar, crédito, credito",
+                "resposta": "Por enquanto o pagamento é só por Pix, que confirma na hora 😊 Posso gerar o seu?"
+              },
+              {
+                "palavras": "depois, mais tarde, agora não, agora nao, amanhã, amanha",
+                "resposta": "Sem problema! Se quiser, já te mando o Pix e você paga quando puder 😉"
+              }
+            ],
+            "naoEntendeu": "Quer que eu te mande o Pix? É só responder *QUERO* 😊",
+            "esperarMin": 1440
+          }
+        }
+      },
+      {
+        "id": "a2_frio",
+        "type": "bloco",
+        "position": {
+          "x": 2400,
+          "y": 600
+        },
+        "data": {
+          "tipo": "acao",
+          "config": {
+            "acoes": [
+              {
+                "tipo": "etiqueta_add",
+                "valor": "lead-frio"
+              },
+              {
+                "tipo": "encerrar",
+                "valor": ""
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_inicio_seguir_m1_boas_vindas",
+        "source": "inicio",
+        "target": "m1_boas_vindas",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_m1_boas_vindas_seguir_p1_objetivo",
+        "source": "m1_boas_vindas",
+        "target": "p1_objetivo",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_p1_objetivo_respondeu_m2_oferta",
+        "source": "p1_objetivo",
+        "target": "m2_oferta",
+        "sourceHandle": "respondeu",
+        "targetHandle": null
+      },
+      {
+        "id": "e_p1_objetivo_sem_resposta_m2_oferta",
+        "source": "p1_objetivo",
+        "target": "m2_oferta",
+        "sourceHandle": "sem_resposta",
+        "targetHandle": null
+      },
+      {
+        "id": "e_p1_objetivo_invalida_m2_oferta",
+        "source": "p1_objetivo",
+        "target": "m2_oferta",
+        "sourceHandle": "invalida",
+        "targetHandle": null
+      },
+      {
+        "id": "e_m2_oferta_seguir_o1_objecoes",
+        "source": "m2_oferta",
+        "target": "o1_objecoes",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_o1_objecoes_comprar_pix1",
+        "source": "o1_objecoes",
+        "target": "pix1",
+        "sourceHandle": "comprar",
+        "targetHandle": null
+      },
+      {
+        "id": "e_o1_objecoes_sem_resposta_m4_recuperacao",
+        "source": "o1_objecoes",
+        "target": "m4_recuperacao",
+        "sourceHandle": "sem_resposta",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix1_pagou_e1_entrega",
+        "source": "pix1",
+        "target": "e1_entrega",
+        "sourceHandle": "pagou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix1_nao_pagou_m3_lembrete_pix",
+        "source": "pix1",
+        "target": "m3_lembrete_pix",
+        "sourceHandle": "nao_pagou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix1_expirou_m5_pix_expirou",
+        "source": "pix1",
+        "target": "m5_pix_expirou",
+        "sourceHandle": "expirou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_e1_entrega_seguir_m6_pos_venda",
+        "source": "e1_entrega",
+        "target": "m6_pos_venda",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_m6_pos_venda_seguir_a1_cliente",
+        "source": "m6_pos_venda",
+        "target": "a1_cliente",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_m5_pix_expirou_seguir_o2_objecoes",
+        "source": "m5_pix_expirou",
+        "target": "o2_objecoes",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_m4_recuperacao_seguir_o2_objecoes",
+        "source": "m4_recuperacao",
+        "target": "o2_objecoes",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_o2_objecoes_comprar_pix1",
+        "source": "o2_objecoes",
+        "target": "pix1",
+        "sourceHandle": "comprar",
+        "targetHandle": null
+      },
+      {
+        "id": "e_o2_objecoes_sem_resposta_a2_frio",
+        "source": "o2_objecoes",
+        "target": "a2_frio",
+        "sourceHandle": "sem_resposta",
+        "targetHandle": null
+      }
+    ]
+  },
+  "referencias": {
+    "produtos": {
+      "prod_geladinho": {
+        "nome": "Guia de Receitas de Geladinho Gourmet",
+        "preco_centavos": 1500
+      }
+    },
+    "funis": {},
+    "colunas": {}
+  }
+}
