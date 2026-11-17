@@ -2,8 +2,9 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 export type ConfigGateway = {
-  gateway: "pagbank" | "livepix";
-  token: string; // PagBank: token | LivePix: "client_id:client_secret"
+  gateway: "pagbank" | "livepix" | "asaas";
+  token: string; // PagBank: token | LivePix: "client_id:client_secret" | Asaas: chave de API
+  chave_pix?: string | null; // Asaas: chave Pix que recebe
   ambiente: "producao" | "sandbox";
   segredo_webhook: string;
   acesso_token?: string | null;
@@ -13,7 +14,7 @@ export type ConfigGateway = {
 const BASE = { producao: "https://api.pagseguro.com", sandbox: "https://sandbox.api.pagseguro.com" };
 
 export async function configGateway(db: SupabaseClient, donoId: string): Promise<ConfigGateway | null> {
-  const { data } = await db.from("gateway_config").select("gateway, token, ambiente, segredo_webhook, acesso_token, acesso_expira").eq("dono_id", donoId).maybeSingle();
+  const { data } = await db.from("gateway_config").select("gateway, token, ambiente, segredo_webhook, acesso_token, acesso_expira, chave_pix").eq("dono_id", donoId).maybeSingle();
   return (data as ConfigGateway) ?? null;
 }
 
@@ -207,6 +208,82 @@ async function registrarAvisoLivePix(db: SupabaseClient, cfg: ConfigGateway, don
 }
 
 /* ------------------------------------------------------------------ */
+/* Asaas: QR Code Pix estático de uso único (não precisa de CPF do cliente) */
+/* ------------------------------------------------------------------ */
+const ASAAS = { producao: "https://api.asaas.com/v3", sandbox: "https://api-sandbox.asaas.com/v3" };
+
+async function asaas<T>(cfg: ConfigGateway, metodo: "GET" | "POST" | "DELETE", caminho: string, corpo?: unknown): Promise<T> {
+  const r = await fetch(`${ASAAS[cfg.ambiente]}${caminho}`, {
+    method: metodo,
+    headers: { access_token: cfg.token, "content-type": "application/json", accept: "application/json", "user-agent": "XClozr" },
+    body: corpo ? JSON.stringify(corpo) : undefined,
+    signal: AbortSignal.timeout(20_000),
+  });
+  const texto = await r.text();
+  let j: { errors?: { code?: string; description?: string }[] } & Record<string, unknown> = {};
+  try {
+    j = JSON.parse(texto);
+  } catch {
+    /* vazio */
+  }
+  if (!r.ok) {
+    const msg = (j.errors?.map((e) => e.description || e.code).join("; ") || texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "sem detalhes").slice(0, 220);
+    if (r.status === 401) throw new Error(`Asaas recusou (401): chave de API inválida para o ambiente ${cfg.ambiente === "sandbox" ? "Sandbox" : "Produção"} (${msg})`);
+    throw new Error(`Asaas recusou (${r.status}): ${msg}`);
+  }
+  return j as T;
+}
+
+/** Primeira chave Pix ativa da conta (o QR Code precisa de uma chave para receber). */
+async function chavePixAsaas(cfg: ConfigGateway) {
+  const r = await asaas<{ data?: { key?: string; status?: string }[] }>(cfg, "GET", "/pix/addressKeys?status=ACTIVE&limit=10");
+  return r.data?.find((k) => k.key)?.key ?? null;
+}
+
+/** Cria um QR Code Pix de uso único, com valor fixo e validade. Devolve o copia-e-cola. */
+export async function criarPixAsaas(cfg: ConfigGateway, p: { pagamentoId: string; descricao: string; valorCentavos: number; expiraMin: number }) {
+  if (!cfg.chave_pix) throw new Error("nenhuma chave Pix ativa na conta Asaas (cadastre uma no app Asaas → Pix → Minhas chaves e conecte de novo)");
+  const r = await asaas<{ id?: string; payload?: string; encodedImage?: string }>(cfg, "POST", "/pix/qrCodes/static", {
+    addressKey: cfg.chave_pix,
+    description: (p.descricao || "Produto").slice(0, 37),
+    value: Math.round(p.valorCentavos) / 100,
+    format: "PAYLOAD",
+    expirationSeconds: Math.max(300, Math.min(p.expiraMin, 60 * 24 * 7) * 60),
+    allowsMultiplePayments: false,
+    externalReference: p.pagamentoId,
+  });
+  if (!r.id || !r.payload) throw new Error("o Asaas não devolveu o código Pix");
+  return { qrId: r.id, copiaCola: r.payload };
+}
+
+/** Confere no Asaas se o QR Code foi pago (o Asaas cria uma cobrança com o id do QR Code). */
+export async function pixAsaasPago(cfg: ConfigGateway, qrId: string, valorCentavos: number) {
+  const r = await asaas<{ data?: { status?: string; value?: number }[] }>(cfg, "GET", `/payments?pixQrCodeId=${encodeURIComponent(qrId)}&limit=10`);
+  return (r.data ?? []).some((c) => ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(String(c.status)) && Math.round(Number(c.value ?? 0) * 100) >= valorCentavos);
+}
+
+export function urlAvisoAsaas(donoId: string, segredo: string) {
+  return `${Deno.env.get("SUPABASE_URL")}/functions/v1/motor/asaas?d=${donoId}&s=${segredo}`;
+}
+
+/** Cadastra o aviso automático de pagamento (webhook). Se falhar, a conferência a cada minuto cobre. */
+async function registrarAvisoAsaas(cfg: ConfigGateway, donoId: string, email: string) {
+  const url = urlAvisoAsaas(donoId, cfg.segredo_webhook);
+  const lista = await asaas<{ data?: { id: string; url: string }[] }>(cfg, "GET", "/webhooks?limit=100");
+  if ((lista.data ?? []).some((w) => w.url === url)) return;
+  for (const w of lista.data ?? []) if (w.url.includes("/functions/v1/motor/asaas")) await asaas(cfg, "DELETE", `/webhooks/${w.id}`).catch(() => null);
+  await asaas(cfg, "POST", "/webhooks", {
+    name: "XClozr - robô de vendas",
+    url,
+    email,
+    enabled: true,
+    interrupted: false,
+    sendType: "SEQUENTIALLY",
+    events: ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"],
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Rotas do painel: status, conectar (testa gerando uma cobrança), remover */
 /* ------------------------------------------------------------------ */
 export async function rotaGateway(db: SupabaseClient, donoId: string, corpo: Record<string, unknown>) {
@@ -220,11 +297,32 @@ export async function rotaGateway(db: SupabaseClient, donoId: string, corpo: Rec
     return { ok: true };
   }
   if (acao === "conectar") {
-    const qual = corpo.gateway === "livepix" ? "livepix" : "pagbank";
+    const qual = corpo.gateway === "livepix" ? "livepix" : corpo.gateway === "asaas" ? "asaas" : "pagbank";
+    let aviso: string | null = null;
     const { data: atual } = await db.from("gateway_config").select("segredo_webhook").eq("dono_id", donoId).maybeSingle();
     const segredo = atual?.segredo_webhook ?? crypto.randomUUID().replaceAll("-", "");
     let cfg: ConfigGateway;
-    if (qual === "livepix") {
+    if (qual === "asaas") {
+      const token = String(corpo.token ?? "").trim();
+      const ambiente = corpo.ambiente === "sandbox" ? "sandbox" : "producao";
+      if (token.length < 20) return { erro: "Cole a chave de API do Asaas." };
+      cfg = { gateway: "asaas", token, ambiente, segredo_webhook: segredo };
+      try {
+        cfg.chave_pix = await chavePixAsaas(cfg);
+        if (!cfg.chave_pix) return { erro: "Não funcionou: sua conta Asaas não tem chave Pix ativa. Cadastre uma (app Asaas → Pix → Minhas chaves) e tente de novo." };
+        // teste de verdade: gera um QR Code de R$ 1,00 que expira em 5 minutos (ninguém precisa pagar) e apaga em seguida
+        const t = await criarPixAsaas(cfg, { pagamentoId: "teste-xclozr", descricao: "Teste XClozr", valorCentavos: 100, expiraMin: 5 });
+        await asaas(cfg, "DELETE", `/pix/qrCodes/static/${t.qrId}`).catch(() => null);
+      } catch (e) {
+        return { erro: `Não funcionou: ${(e as Error).message}` };
+      }
+      try {
+        const { data: u } = await db.auth.admin.getUserById(donoId);
+        await registrarAvisoAsaas(cfg, donoId, u?.user?.email ?? "contato@xclozr.app");
+      } catch (e) {
+        aviso = `Conectado! Só não consegui cadastrar o aviso automático (${(e as Error).message}); o robô confere os pagamentos a cada minuto.`;
+      }
+    } else if (qual === "livepix") {
       const id = String(corpo.client_id ?? "").trim();
       const sec = String(corpo.client_secret ?? "").trim();
       if (id.length < 8 || sec.length < 8) return { erro: "Cole o Client ID e o Client Secret da aplicação LivePix." };
@@ -256,13 +354,14 @@ export async function rotaGateway(db: SupabaseClient, donoId: string, corpo: Rec
       segredo_webhook: segredo,
       acesso_token: cfg.acesso_token ?? null,
       acesso_expira: cfg.acesso_expira ?? null,
+      chave_pix: cfg.chave_pix ?? null,
       ok: true,
       erro: null,
       atualizado_em: new Date().toISOString(),
     });
     if (error) return { erro: "Funcionou, mas não consegui salvar. Tente de novo." };
     await db.from("configuracoes").upsert({ dono_id: donoId, gateway: cfg.gateway });
-    return { ok: true };
+    return aviso ? { ok: true, aviso } : { ok: true };
   }
   return { erro: "ação desconhecida" };
 }

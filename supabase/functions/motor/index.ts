@@ -12,7 +12,7 @@ import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
 import { rotasNumeros } from "./numeros.ts";
 import { MODELO_PADRAO, responderIA, testarIA, type Provedor } from "./ia.ts";
 import { ETIQUETA_SAIR, ehPedidoSair, processarDisparos } from "./disparos.ts";
-import { cobrancaLivePixPaga, configGateway, pagamentoLivePix, pedidoPago, rotaGateway, type ConfigGateway } from "./gateway.ts";
+import { cobrancaLivePixPaga, configGateway, pagamentoLivePix, pedidoPago, pixAsaasPago, rotaGateway, type ConfigGateway } from "./gateway.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -190,6 +190,7 @@ async function avisoPagBank(req: Request, cfg: Record<string, string>) {
 // Pergunta ao gateway se o pagamento caiu (PagBank: pedido | LivePix: referência + valor)
 async function gatewayPago(gw: ConfigGateway, donoId: string, gatewayId: string, valorCentavos: number) {
   if (gw.gateway === "livepix") return await cobrancaLivePixPaga(db, gw, donoId, gatewayId, valorCentavos);
+  if (gw.gateway === "asaas") return await pixAsaasPago(gw, gatewayId, valorCentavos);
   return (await pedidoPago(gw, gatewayId)).pago;
 }
 
@@ -208,6 +209,22 @@ async function avisoLivePix(req: Request, cfg: Record<string, string>) {
   const { data: pg } = await db.from("pagamentos").select("id, status, valor_centavos").eq("dono_id", donoId).eq("gateway", "livepix").eq("gateway_id", ref).maybeSingle();
   if (!pg || pg.status === "pago") return json({ ok: true });
   const pago = await cobrancaLivePixPaga(db, gw, donoId, ref, pg.valor_centavos);
+  if (pago) await confirmarPagamento(pg.id, cfg);
+  return json({ ok: true, pago });
+}
+
+// Aviso do Asaas (?d=dono&s=segredo). Não confia no corpo: confere o QR Code na API.
+async function avisoAsaas(req: Request, cfg: Record<string, string>) {
+  const u = new URL(req.url);
+  const donoId = u.searchParams.get("d") ?? "";
+  const corpo = await req.json().catch(() => ({}));
+  const gw = /^[0-9a-f-]{36}$/.test(donoId) ? await configGateway(db, donoId) : null;
+  if (!gw || gw.gateway !== "asaas" || u.searchParams.get("s") !== gw.segredo_webhook) return json({ erro: "aviso inválido" }, 401);
+  const qrId = String(corpo?.payment?.pixQrCodeId ?? "");
+  if (!qrId) return json({ ok: true, ignorado: true });
+  const { data: pg } = await db.from("pagamentos").select("id, status, valor_centavos").eq("dono_id", donoId).eq("gateway", "asaas").eq("gateway_id", qrId).maybeSingle();
+  if (!pg || pg.status === "pago") return json({ ok: true });
+  const pago = await pixAsaasPago(gw, qrId, pg.valor_centavos);
   if (pago) await confirmarPagamento(pg.id, cfg);
   return json({ ok: true, pago });
 }
@@ -241,7 +258,7 @@ async function conferirPendentes(cfg: Record<string, string>) {
     .from("pagamentos")
     .select("id, dono_id, gateway, gateway_id, valor_centavos, criado_em")
     .eq("status", "pendente")
-    .in("gateway", ["pagbank", "livepix"])
+    .in("gateway", ["pagbank", "livepix", "asaas"])
     .not("gateway_id", "is", null)
     .lte("verificar_em", agora.toISOString())
     .order("verificar_em")
@@ -591,6 +608,7 @@ Deno.serve(async (req) => {
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);
     if (rota === "/pagbank" && req.method === "POST") return await avisoPagBank(req, cfg);
     if (rota === "/livepix" && req.method === "POST") return await avisoLivePix(req, cfg);
+    if (rota === "/asaas" && req.method === "POST") return await avisoAsaas(req, cfg);
     if (rota === "/livepix-volta" && req.method === "GET") return await voltaLivePix(req, cfg);
     return json({ erro: "rota não encontrada" }, 404);
   } catch (e) {

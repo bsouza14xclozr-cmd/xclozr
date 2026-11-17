@@ -1,2 +1,2 @@
 # Pacotes prontos das edge functions (gerados por esbuild a partir de supabase/functions).
-# O deploy da função "motor" importa motor.js daqui, fixado pelo commit.
+# O deploy das funções "motor" e "pagamentos" importa o .js daqui, fixado pelo commit.

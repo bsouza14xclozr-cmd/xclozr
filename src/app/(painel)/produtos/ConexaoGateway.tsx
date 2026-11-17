@@ -237,3 +237,113 @@ export function ConexaoLivePix() {
     </div>
   );
 }
+
+// Conexão com o Asaas: a chave de API vai direto para o servidor do robô e nunca volta para o navegador.
+export function ConexaoAsaas() {
+  const [status, setStatus] = useState<(Status & { gateway?: string }) | null>(null);
+  const [token, setToken] = useState("");
+  const [ambiente, setAmbiente] = useState<"producao" | "sandbox">("producao");
+  const [trocar, setTrocar] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      setStatus(await chamar<Status & { gateway?: string }>({ acao: "status" }));
+    } catch {
+      setStatus({ conectado: false });
+    }
+  }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carrega ao abrir
+    void carregar();
+  }, [carregar]);
+
+  async function conectar(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setOcupado(true);
+    try {
+      const r = await chamar<{ ok: boolean; aviso?: string }>({ acao: "conectar", gateway: "asaas", token, ambiente });
+      setToken("");
+      setTrocar(false);
+      setMsg({ ok: true, texto: r.aviso ?? "Asaas conectado! O robô já gera Pix copia e cola de verdade e entrega sozinho quando o pagamento cai." });
+      await carregar();
+    } catch (err) {
+      setMsg({ ok: false, texto: (err as Error).message });
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function remover() {
+    if (!window.confirm("Desconectar o Asaas? O robô para de gerar Pix até você conectar de novo.")) return;
+    await chamar({ acao: "remover" });
+    await carregar();
+  }
+
+  if (!status) return <p className="text-sm text-suave">Carregando conexão…</p>;
+
+  const conectadoAqui = status.conectado && status.gateway === "asaas";
+  const mostrarForm = !conectadoAqui || trocar;
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-borda bg-fundo p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <b className="text-sm">Conexão com o Asaas</b>
+        {conectadoAqui ? (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${status.erro ? "bg-[#241b0e] text-laranja" : "bg-limao/15 text-limao"}`}>
+            {status.erro ? "● Conectado, com erro" : `● Conectado${status.ambiente === "sandbox" ? " (teste/sandbox)" : ""}`}
+          </span>
+        ) : (
+          <span className="rounded-full border border-[#5a4220] bg-[#241b0e] px-2.5 py-1 text-xs font-semibold text-laranja">● Não conectado</span>
+        )}
+      </div>
+
+      {conectadoAqui && status.erro && <p className="text-sm text-laranja">Último erro ao gerar Pix: {status.erro}</p>}
+      {status.conectado && status.gateway && status.gateway !== "asaas" && (
+        <p className="text-sm text-laranja">Hoje o robô usa {status.gateway === "pagbank" ? "o PagBank" : status.gateway === "livepix" ? "a LivePix" : status.gateway}. Conectar o Asaas substitui essa conexão.</p>
+      )}
+
+      {mostrarForm ? (
+        <>
+          <ol className="flex flex-col gap-1.5 text-sm text-suave">
+            <li>
+              1. No Asaas (site), clique no seu nome → <b className="text-texto">Integrações</b> → <b className="text-texto">Chaves de API</b> →{" "}
+              <b className="text-texto">Gerar chave de API</b>. Ela começa com <b className="text-texto">$aact_</b> e só aparece uma vez.
+            </li>
+            <li>
+              2. Confira se a conta tem uma <b className="text-texto">chave Pix</b> ativa (app Asaas → Pix → Minhas chaves). O cliente não precisa informar CPF.
+            </li>
+            <li>3. Cole a chave abaixo. Eu testo gerando um Pix de R$ 1,00 que é apagado na hora (ninguém precisa pagar) e cadastro o aviso de pagamento automático.</li>
+          </ol>
+          <form onSubmit={conectar} className="flex flex-col gap-3 sm:flex-row">
+            <input className={inputCls} type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Cole a chave de API do Asaas ($aact_…)" autoComplete="off" required />
+            <select className={`${inputCls} sm:w-44`} value={ambiente} onChange={(e) => setAmbiente(e.target.value as "producao" | "sandbox")} aria-label="Ambiente">
+              <option value="producao">Produção (real)</option>
+              <option value="sandbox">Sandbox (teste)</option>
+            </select>
+            <button type="submit" disabled={ocupado} className="min-h-11 shrink-0 rounded-[10px] bg-limao px-5 text-sm font-bold text-fundo hover:brightness-110 disabled:opacity-60">
+              {ocupado ? "Testando…" : "Testar e conectar"}
+            </button>
+          </form>
+          {trocar && (
+            <button type="button" onClick={() => setTrocar(false)} className="self-start text-xs text-suave hover:text-texto">
+              cancelar
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-suave">O robô gera o Pix copia e cola no Asaas e entrega sozinho quando o pagamento cai.</span>
+          <button type="button" onClick={() => setTrocar(true)} className="text-limao hover:underline">
+            Trocar chave
+          </button>
+          <button type="button" onClick={() => void remover()} className="text-suave hover:text-vermelho">
+            Desconectar
+          </button>
+        </div>
+      )}
+      {msg && <p className={`text-sm ${msg.ok ? "text-limao" : "text-vermelho"}`}>{msg.texto}</p>}
+    </div>
+  );
+}

@@ -512,7 +512,7 @@ async function pixPago(ctx, c, pagamentoId) {
 // supabase/functions/motor/gateway.ts
 var BASE = { producao: "https://api.pagseguro.com", sandbox: "https://sandbox.api.pagseguro.com" };
 async function configGateway(db2, donoId) {
-  const { data } = await db2.from("gateway_config").select("gateway, token, ambiente, segredo_webhook, acesso_token, acesso_expira").eq("dono_id", donoId).maybeSingle();
+  const { data } = await db2.from("gateway_config").select("gateway, token, ambiente, segredo_webhook, acesso_token, acesso_expira, chave_pix").eq("dono_id", donoId).maybeSingle();
   return data ?? null;
 }
 function urlAviso(donoId, segredo) {
@@ -660,6 +660,67 @@ async function registrarAvisoLivePix(db2, cfg, donoId) {
   for (const w of lista.data ?? []) if (w.url.includes("/functions/v1/motor/livepix")) await livePix(db2, donoId, cfg, "DELETE", `/v2/webhooks/${w.id}`).catch(() => null);
   await livePix(db2, donoId, cfg, "POST", "/v2/webhooks", { url });
 }
+var ASAAS = { producao: "https://api.asaas.com/v3", sandbox: "https://api-sandbox.asaas.com/v3" };
+async function asaas(cfg, metodo, caminho, corpo) {
+  const r = await fetch(`${ASAAS[cfg.ambiente]}${caminho}`, {
+    method: metodo,
+    headers: { access_token: cfg.token, "content-type": "application/json", accept: "application/json", "user-agent": "XClozr" },
+    body: corpo ? JSON.stringify(corpo) : void 0,
+    signal: AbortSignal.timeout(2e4)
+  });
+  const texto = await r.text();
+  let j = {};
+  try {
+    j = JSON.parse(texto);
+  } catch {
+  }
+  if (!r.ok) {
+    const msg = (j.errors?.map((e) => e.description || e.code).join("; ") || texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "sem detalhes").slice(0, 220);
+    if (r.status === 401) throw new Error(`Asaas recusou (401): chave de API inválida para o ambiente ${cfg.ambiente === "sandbox" ? "Sandbox" : "Produção"} (${msg})`);
+    throw new Error(`Asaas recusou (${r.status}): ${msg}`);
+  }
+  return j;
+}
+async function chavePixAsaas(cfg) {
+  const r = await asaas(cfg, "GET", "/pix/addressKeys?status=ACTIVE&limit=10");
+  return r.data?.find((k) => k.key)?.key ?? null;
+}
+async function criarPixAsaas(cfg, p) {
+  if (!cfg.chave_pix) throw new Error("nenhuma chave Pix ativa na conta Asaas (cadastre uma no app Asaas → Pix → Minhas chaves e conecte de novo)");
+  const r = await asaas(cfg, "POST", "/pix/qrCodes/static", {
+    addressKey: cfg.chave_pix,
+    description: (p.descricao || "Produto").slice(0, 37),
+    value: Math.round(p.valorCentavos) / 100,
+    format: "PAYLOAD",
+    expirationSeconds: Math.max(300, Math.min(p.expiraMin, 60 * 24 * 7) * 60),
+    allowsMultiplePayments: false,
+    externalReference: p.pagamentoId
+  });
+  if (!r.id || !r.payload) throw new Error("o Asaas não devolveu o código Pix");
+  return { qrId: r.id, copiaCola: r.payload };
+}
+async function pixAsaasPago(cfg, qrId, valorCentavos) {
+  const r = await asaas(cfg, "GET", `/payments?pixQrCodeId=${encodeURIComponent(qrId)}&limit=10`);
+  return (r.data ?? []).some((c) => ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(String(c.status)) && Math.round(Number(c.value ?? 0) * 100) >= valorCentavos);
+}
+function urlAvisoAsaas(donoId, segredo) {
+  return `${Deno.env.get("SUPABASE_URL")}/functions/v1/motor/asaas?d=${donoId}&s=${segredo}`;
+}
+async function registrarAvisoAsaas(cfg, donoId, email) {
+  const url = urlAvisoAsaas(donoId, cfg.segredo_webhook);
+  const lista = await asaas(cfg, "GET", "/webhooks?limit=100");
+  if ((lista.data ?? []).some((w) => w.url === url)) return;
+  for (const w of lista.data ?? []) if (w.url.includes("/functions/v1/motor/asaas")) await asaas(cfg, "DELETE", `/webhooks/${w.id}`).catch(() => null);
+  await asaas(cfg, "POST", "/webhooks", {
+    name: "XClozr - robô de vendas",
+    url,
+    email,
+    enabled: true,
+    interrupted: false,
+    sendType: "SEQUENTIALLY",
+    events: ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]
+  });
+}
 async function rotaGateway(db2, donoId, corpo) {
   const acao = String(corpo.acao ?? "status");
   if (acao === "status") {
@@ -671,11 +732,31 @@ async function rotaGateway(db2, donoId, corpo) {
     return { ok: true };
   }
   if (acao === "conectar") {
-    const qual = corpo.gateway === "livepix" ? "livepix" : "pagbank";
+    const qual = corpo.gateway === "livepix" ? "livepix" : corpo.gateway === "asaas" ? "asaas" : "pagbank";
+    let aviso = null;
     const { data: atual } = await db2.from("gateway_config").select("segredo_webhook").eq("dono_id", donoId).maybeSingle();
     const segredo = atual?.segredo_webhook ?? crypto.randomUUID().replaceAll("-", "");
     let cfg;
-    if (qual === "livepix") {
+    if (qual === "asaas") {
+      const token2 = String(corpo.token ?? "").trim();
+      const ambiente = corpo.ambiente === "sandbox" ? "sandbox" : "producao";
+      if (token2.length < 20) return { erro: "Cole a chave de API do Asaas." };
+      cfg = { gateway: "asaas", token: token2, ambiente, segredo_webhook: segredo };
+      try {
+        cfg.chave_pix = await chavePixAsaas(cfg);
+        if (!cfg.chave_pix) return { erro: "Não funcionou: sua conta Asaas não tem chave Pix ativa. Cadastre uma (app Asaas → Pix → Minhas chaves) e tente de novo." };
+        const t = await criarPixAsaas(cfg, { pagamentoId: "teste-xclozr", descricao: "Teste XClozr", valorCentavos: 100, expiraMin: 5 });
+        await asaas(cfg, "DELETE", `/pix/qrCodes/static/${t.qrId}`).catch(() => null);
+      } catch (e) {
+        return { erro: `Não funcionou: ${e.message}` };
+      }
+      try {
+        const { data: u } = await db2.auth.admin.getUserById(donoId);
+        await registrarAvisoAsaas(cfg, donoId, u?.user?.email ?? "contato@xclozr.app");
+      } catch (e) {
+        aviso = `Conectado! Só não consegui cadastrar o aviso automático (${e.message}); o robô confere os pagamentos a cada minuto.`;
+      }
+    } else if (qual === "livepix") {
       const id = String(corpo.client_id ?? "").trim();
       const sec = String(corpo.client_secret ?? "").trim();
       if (id.length < 8 || sec.length < 8) return { erro: "Cole o Client ID e o Client Secret da aplicação LivePix." };
@@ -705,13 +786,14 @@ async function rotaGateway(db2, donoId, corpo) {
       segredo_webhook: segredo,
       acesso_token: cfg.acesso_token ?? null,
       acesso_expira: cfg.acesso_expira ?? null,
+      chave_pix: cfg.chave_pix ?? null,
       ok: true,
       erro: null,
       atualizado_em: (/* @__PURE__ */ new Date()).toISOString()
     });
     if (error) return { erro: "Funcionou, mas não consegui salvar. Tente de novo." };
     await db2.from("configuracoes").upsert({ dono_id: donoId, gateway: cfg.gateway });
-    return { ok: true };
+    return aviso ? { ok: true, aviso } : { ok: true };
   }
   return { erro: "ação desconhecida" };
 }
@@ -815,6 +897,11 @@ function criarStore(db2, donoId) {
         return { id: data.id, copiaCola };
       }
       try {
+        if (gw.gateway === "asaas") {
+          const qr = await criarPixAsaas(gw, { pagamentoId: data.id, descricao: produto.nome, valorCentavos: produto.preco_centavos, expiraMin });
+          await db2.from("pagamentos").update({ pix_copia_cola: qr.copiaCola, gateway_id: qr.qrId, verificar_em: new Date(Date.now() + 6e4).toISOString() }).eq("id", data.id);
+          return { id: data.id, copiaCola: qr.copiaCola };
+        }
         if (gw.gateway === "livepix") {
           const lp = await criarCobrancaLivePix(db2, gw, donoId, { pagamentoId: data.id, valorCentavos: produto.preco_centavos });
           await db2.from("pagamentos").update({ pix_copia_cola: lp.link, gateway_id: lp.referencia, verificar_em: new Date(Date.now() + 6e4).toISOString() }).eq("id", data.id);
@@ -1456,6 +1543,7 @@ async function avisoPagBank(req, cfg) {
 }
 async function gatewayPago(gw, donoId, gatewayId, valorCentavos) {
   if (gw.gateway === "livepix") return await cobrancaLivePixPaga(db, gw, donoId, gatewayId, valorCentavos);
+  if (gw.gateway === "asaas") return await pixAsaasPago(gw, gatewayId, valorCentavos);
   return (await pedidoPago(gw, gatewayId)).pago;
 }
 async function avisoLivePix(req, cfg) {
@@ -1472,6 +1560,20 @@ async function avisoLivePix(req, cfg) {
   const { data: pg } = await db.from("pagamentos").select("id, status, valor_centavos").eq("dono_id", donoId).eq("gateway", "livepix").eq("gateway_id", ref).maybeSingle();
   if (!pg || pg.status === "pago") return json({ ok: true });
   const pago = await cobrancaLivePixPaga(db, gw, donoId, ref, pg.valor_centavos);
+  if (pago) await confirmarPagamento(pg.id, cfg);
+  return json({ ok: true, pago });
+}
+async function avisoAsaas(req, cfg) {
+  const u = new URL(req.url);
+  const donoId = u.searchParams.get("d") ?? "";
+  const corpo = await req.json().catch(() => ({}));
+  const gw = /^[0-9a-f-]{36}$/.test(donoId) ? await configGateway(db, donoId) : null;
+  if (!gw || gw.gateway !== "asaas" || u.searchParams.get("s") !== gw.segredo_webhook) return json({ erro: "aviso inválido" }, 401);
+  const qrId = String(corpo?.payment?.pixQrCodeId ?? "");
+  if (!qrId) return json({ ok: true, ignorado: true });
+  const { data: pg } = await db.from("pagamentos").select("id, status, valor_centavos").eq("dono_id", donoId).eq("gateway", "asaas").eq("gateway_id", qrId).maybeSingle();
+  if (!pg || pg.status === "pago") return json({ ok: true });
+  const pago = await pixAsaasPago(gw, qrId, pg.valor_centavos);
   if (pago) await confirmarPagamento(pg.id, cfg);
   return json({ ok: true, pago });
 }
@@ -1497,7 +1599,7 @@ async function voltaLivePix(req, cfg) {
 }
 async function conferirPendentes(cfg) {
   const agora = /* @__PURE__ */ new Date();
-  const { data: pendentes } = await db.from("pagamentos").select("id, dono_id, gateway, gateway_id, valor_centavos, criado_em").eq("status", "pendente").in("gateway", ["pagbank", "livepix"]).not("gateway_id", "is", null).lte("verificar_em", agora.toISOString()).order("verificar_em").limit(8);
+  const { data: pendentes } = await db.from("pagamentos").select("id, dono_id, gateway, gateway_id, valor_centavos, criado_em").eq("status", "pendente").in("gateway", ["pagbank", "livepix", "asaas"]).not("gateway_id", "is", null).lte("verificar_em", agora.toISOString()).order("verificar_em").limit(8);
   let pagos = 0;
   for (const p of pendentes ?? []) {
     const idadeMin = (agora.getTime() - new Date(p.criado_em).getTime()) / 6e4;
@@ -1757,6 +1859,7 @@ Deno.serve(async (req) => {
     if (rota === "/relogio" && req.method === "POST") return await relogio(req, cfg);
     if (rota === "/pagbank" && req.method === "POST") return await avisoPagBank(req, cfg);
     if (rota === "/livepix" && req.method === "POST") return await avisoLivePix(req, cfg);
+    if (rota === "/asaas" && req.method === "POST") return await avisoAsaas(req, cfg);
     if (rota === "/livepix-volta" && req.method === "GET") return await voltaLivePix(req, cfg);
     return json({ erro: "rota não encontrada" }, 404);
   } catch (e) {
