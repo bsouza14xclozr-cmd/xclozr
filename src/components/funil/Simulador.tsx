@@ -73,6 +73,8 @@ export function Simulador({
   const [estado, setEstado] = useState<Estado | null>(null);
   const [texto, setTexto] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  // indicador mostrado antes de cada mensagem do robô aparecer (igual ao WhatsApp)
+  const [indicador, setIndicador] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const fim = useRef<HTMLDivElement>(null);
 
@@ -85,12 +87,23 @@ export function Simulador({
         const r = await chamar({ acao, texto: txt });
         if (r.erro) throw new Error(r.erro);
         if (acao === "reiniciar" || acao === "estado") setMsgs(r.mensagens);
-        else setMsgs((m) => [...m, ...r.mensagens]);
+        else {
+          // mostra as mensagens uma de cada vez, com “gravando áudio…” antes de áudio e “digitando…” antes do resto
+          for (const m of r.mensagens) {
+            if (m.autor !== "cliente") {
+              setIndicador(m.tipo === "audio" ? "🎙 gravando áudio…" : "digitando…");
+              await new Promise((ok) => setTimeout(ok, m.tipo === "audio" ? 1500 : 900));
+            }
+            setMsgs((lista) => [...lista, m]);
+          }
+          setIndicador(null);
+        }
         setEstado(r.estado);
         onBlocoAtual?.(r.estado?.bloco_atual ?? null);
       } catch (e) {
         setErro(e instanceof Error && e.message ? `Não consegui testar: ${e.message}` : "Não consegui falar com o motor.");
       } finally {
+        setIndicador(null);
         setOcupado(false);
       }
     },
@@ -156,7 +169,7 @@ export function Simulador({
         {msgs.map((m, i) => (
           <Bolha key={i} m={m} />
         ))}
-        {ocupado && <span className="text-xs text-suave">digitando…</span>}
+        {ocupado && <span className="text-xs text-suave">{indicador ?? "…"}</span>}
         <div ref={fim} />
       </div>
 

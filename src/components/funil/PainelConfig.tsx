@@ -271,7 +271,7 @@ function ItensMensagem({ id, valor, onChange }: { id: string; valor: ItemMensage
               <span className="text-suave">segundos</span>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={item.digitando} onChange={(e) => set(i, { ...item, digitando: e.target.checked })} className="accent-limao" />
-                mostrar “digitando…”
+                {valor[i + 1]?.tipo === "audio" ? "mostrar “gravando áudio…”" : "mostrar “digitando…”"}
               </label>
             </div>
           )}
