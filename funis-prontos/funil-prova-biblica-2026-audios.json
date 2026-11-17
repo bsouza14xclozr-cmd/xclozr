@@ -1,0 +1,998 @@
+{
+  "formato": "xclozr-funil",
+  "versao": 1,
+  "exportado_em": "2026-11-17T15:43:49.235135+00:00",
+  "nome": "Prova Bíblica 2026 — X1 com áudios",
+  "grafo": {
+    "nodes": [
+      {
+        "id": "inicio",
+        "type": "bloco",
+        "position": {
+          "x": 80,
+          "y": 200
+        },
+        "data": {
+          "tipo": "inicio",
+          "config": {}
+        }
+      },
+      {
+        "id": "boas_vindas",
+        "type": "bloco",
+        "position": {
+          "x": 420,
+          "y": 200
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Graça e paz, {nome}! 🙏 Que bom que você chamou!"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/prova-biblica/01-boas-vindas.mp3"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "menu_tipo",
+        "type": "bloco",
+        "position": {
+          "x": 760,
+          "y": 200
+        },
+        "data": {
+          "tipo": "menu",
+          "config": {
+            "texto": "Me conta rapidinho: onde você quer aplicar a prova? 👇",
+            "opcoes": [
+              "Na igreja",
+              "Na célula / grupo",
+              "Em família",
+              "No ministério infantil"
+            ],
+            "msgInvalida": "Me responde só com o número da opção 🙂 (1, 2, 3 ou 4)",
+            "esperarMin": 5
+          }
+        }
+      },
+      {
+        "id": "demo_igreja",
+        "type": "bloco",
+        "position": {
+          "x": 1100,
+          "y": -145
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Perfeito pra igreja! 😍 Fica lindo num culto de família, na EBD ou num evento especial: todo mundo fazendo a prova junto e depois a premiação dos campeões lá na frente 🏆"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "O que vem no kit:\n✅ 3 cadernos (fácil, intermediário e difícil) com 50 perguntas inéditas cada\n✅ Cartão-resposta\n✅ Gabarito pra conferir quem acertou mais\n✅ Músicas inéditas\n✅ Certificado pra todos, com um especial pros campeões\n\nServe da criança ao avô. É só imprimir, entregar e aplicar, e você imprime *quantas cópias quiser* 🖨️"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "demo_celula",
+        "type": "bloco",
+        "position": {
+          "x": 1100,
+          "y": 85
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Perfeito pra célula! 😍 Vira o encontro mais animado do mês: o grupo competindo, conferindo o gabarito junto e celebrando quem acertou mais 🏆"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "O que vem no kit:\n✅ 3 cadernos (fácil, intermediário e difícil) com 50 perguntas inéditas cada\n✅ Cartão-resposta\n✅ Gabarito pra conferir quem acertou mais\n✅ Músicas inéditas\n✅ Certificado pra todos, com um especial pros campeões\n\nServe da criança ao avô. É só imprimir, entregar e aplicar, e você imprime *quantas cópias quiser* 🖨️"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "demo_familia",
+        "type": "bloco",
+        "position": {
+          "x": 1100,
+          "y": 315
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Que lindo fazer em família! 😍 Pais, filhos e avós competindo juntos, cada um no seu nível, e aprendendo a Palavra sem perceber 🏆"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "O que vem no kit:\n✅ 3 cadernos (fácil, intermediário e difícil) com 50 perguntas inéditas cada\n✅ Cartão-resposta\n✅ Gabarito pra conferir quem acertou mais\n✅ Músicas inéditas\n✅ Certificado pra todos, com um especial pros campeões\n\nServe da criança ao avô. É só imprimir, entregar e aplicar, e você imprime *quantas cópias quiser* 🖨️"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "demo_infantil",
+        "type": "bloco",
+        "position": {
+          "x": 1100,
+          "y": 545
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 2,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "Perfeito pro ministério infantil! 😍 O caderno *fácil* foi feito pros pequenos, e a criançada ama receber o certificado no final 🏆"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "O que vem no kit:\n✅ 3 cadernos (fácil, intermediário e difícil) com 50 perguntas inéditas cada\n✅ Cartão-resposta\n✅ Gabarito pra conferir quem acertou mais\n✅ Músicas inéditas\n✅ Certificado pra todos, com um especial pros campeões\n\nServe da criança ao avô. É só imprimir, entregar e aplicar, e você imprime *quantas cópias quiser* 🖨️"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "oferta",
+        "type": "bloco",
+        "position": {
+          "x": 1440,
+          "y": 200
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/prova-biblica/02-oferta.mp3"
+              },
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "texto",
+                "texto": "📖 *Kit Prova Bíblica 2026* por *apenas R$13*\n✅ Chega aqui no WhatsApp na hora, logo depois do Pix\n\nPosso gerar seu Pix agora?"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "objecoes",
+        "type": "bloco",
+        "position": {
+          "x": 1780,
+          "y": 200
+        },
+        "data": {
+          "tipo": "objecoes",
+          "config": {
+            "palavrasCompra": "quero, sim, pode, pix, bora, manda, gera, como pago, como faço, vou querer, aceito, claro, ok",
+            "objecoes": [
+              {
+                "palavras": "impresso, digital, pdf, físico, fisico, correio, entrega em casa",
+                "resposta": "É digital, em PDF 📄 Você recebe aqui no WhatsApp e imprime quantas vezes quiser, em casa ou na gráfica 🖨️ Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "difícil, dificil, aplicar, como funciona, como aplica",
+                "resposta": "Nada difícil! Você entrega o caderno e o cartão-resposta, marca o tempo e depois corrige com o gabarito. Em 1 horinha está tudo pronto ✅ Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "criança, crianca, infantil, idade, idoso, avó, avo",
+                "resposta": "Serve pra todas as idades! O caderno fácil foi feito pros pequenos, e o difícil desafia até os mais antigos da igreja 😄 Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "quantas pessoas, quantas cópias, quantas copias, limite, pra todos, para todos",
+                "resposta": "Quantas quiser! Você compra uma vez e imprime pra igreja toda 🙌 Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "gabarito, resposta, respostas",
+                "resposta": "Tem sim! Vem o gabarito completo dos 3 níveis ✅ Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "música, musica, músicas, musicas, louvor",
+                "resposta": "Vem com músicas inéditas pra animar o momento da prova e da premiação 🎶 Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "certificado, premiação, premiacao, prêmio, premio",
+                "resposta": "Vem certificado pra todos os participantes e um modelo especial pros campeões 🏆 É só imprimir e preencher o nome. Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "caro, desconto, valor, preço, preco, agora não, agora nao, sem dinheiro, depois",
+                "resposta": "Entendo! Mas olha: são R$13 pra igreja toda, menos de R$1 por pessoa numa turma de 15 🙏 Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "golpe, confiável, confiavel, seguro, verdade, medo",
+                "resposta": "Pode ficar tranquilo(a)! A entrega é automática aqui mesmo, logo depois do Pix. E se der qualquer problema eu resolvo pessoalmente 🙏 Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "cartão, cartao, boleto, crédito, credito, parcelar",
+                "resposta": "Por enquanto é só no Pix, e é por isso que a entrega é na hora ⚡ Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "quando chega, demora, prazo, quanto tempo",
+                "resposta": "Chega na hora! Assim que o Pix cai, o kit vem automaticamente aqui no WhatsApp ⚡ Posso gerar seu Pix?"
+              },
+              {
+                "palavras": "amostra, exemplo, ver antes, foto, mostrar",
+                "resposta": "Claro! O kit tem capa, 3 cadernos com 50 perguntas cada, cartão-resposta, gabarito e certificados, tudo prontinho pra imprimir 📖 Posso gerar seu Pix pra você receber agora?"
+              }
+            ],
+            "naoEntendeu": "Entendi! 🙏 Ficou com alguma dúvida? Se quiser, já gero seu Pix de R$13 e o kit chega na hora 😉",
+            "esperarMin": 120
+          }
+        }
+      },
+      {
+        "id": "reengaja",
+        "type": "bloco",
+        "position": {
+          "x": 1780,
+          "y": 499
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "{nome}, imagina a igreja toda competindo e louvando junto... 😍 Vou deixar seu Pix aqui embaixo pra facilitar, tá? 👇"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "pix",
+        "type": "bloco",
+        "position": {
+          "x": 2120,
+          "y": 200
+        },
+        "data": {
+          "tipo": "pix",
+          "config": {
+            "produtoId": "prod_prova",
+            "texto": "Aqui está seu Pix de *R$13,00* 👇 É só copiar e colar no app do seu banco. Assim que o pagamento cair, eu te mando o kit automaticamente aqui 🙌",
+            "esperarMin": 15,
+            "expiraMin": 1440
+          }
+        }
+      },
+      {
+        "id": "marca_comprador",
+        "type": "bloco",
+        "position": {
+          "x": 2460,
+          "y": -30
+        },
+        "data": {
+          "tipo": "acao",
+          "config": {
+            "acoes": [
+              {
+                "tipo": "etiqueta_add",
+                "valor": "comprou-prova-biblica"
+              },
+              {
+                "tipo": "etiqueta_remover",
+                "valor": "pix-pendente"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "entrega",
+        "type": "bloco",
+        "position": {
+          "x": 2800,
+          "y": -30
+        },
+        "data": {
+          "tipo": "entregar",
+          "config": {
+            "produtoId": "prod_prova",
+            "texto": "Pagamento confirmado! Deus abençoe, {nome} 🙏 Aqui está o seu kit completo 👇\n\nDica: imprima o cartão-resposta separado e use o gabarito pra corrigir na hora. Na premiação, chame os campeões lá na frente pra receber o certificado 🏆"
+          }
+        }
+      },
+      {
+        "id": "espera_upsell",
+        "type": "bloco",
+        "position": {
+          "x": 3140,
+          "y": -30
+        },
+        "data": {
+          "tipo": "esperar",
+          "config": {
+            "quantidade": 2,
+            "unidade": "minutos",
+            "cancelaSeResponder": false
+          }
+        }
+      },
+      {
+        "id": "upsell",
+        "type": "bloco",
+        "position": {
+          "x": 3820,
+          "y": -30
+        },
+        "data": {
+          "tipo": "upsell",
+          "config": {
+            "produtoId": "prod_guia",
+            "texto": "📘 *Guia Rápido: Como Ler a Bíblia Sem Desanimar*\nSó hoje, pra quem levou o kit: *R$9,90*\n\nQuer que eu gere o Pix? É só responder *SIM* 😉",
+            "palavrasSim": "sim, quero, manda, bora, pode, gera, aceito, claro, ok",
+            "esperarMin": 30
+          }
+        }
+      },
+      {
+        "id": "pix_upsell",
+        "type": "bloco",
+        "position": {
+          "x": 3820,
+          "y": -260
+        },
+        "data": {
+          "tipo": "pix",
+          "config": {
+            "produtoId": "prod_guia",
+            "texto": "Aqui está o Pix de *R$9,90* do Guia 👇 Assim que cair, te envio na hora 🙌",
+            "esperarMin": 30,
+            "expiraMin": 1440
+          }
+        }
+      },
+      {
+        "id": "entrega_upsell",
+        "type": "bloco",
+        "position": {
+          "x": 4160,
+          "y": -260
+        },
+        "data": {
+          "tipo": "entregar",
+          "config": {
+            "produtoId": "prod_guia",
+            "texto": "Pagamento confirmado! 🙏 Aqui está o seu *Guia Rápido: Como Ler a Bíblia Sem Desanimar* 👇"
+          }
+        }
+      },
+      {
+        "id": "lembrete_upsell",
+        "type": "bloco",
+        "position": {
+          "x": 4160,
+          "y": -30
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "Seu Pix do Guia ainda está aqui em cima, tá? 😉 Se não for o momento, sem problema nenhum, aproveite o kit! 🙏"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "fechamento",
+        "type": "bloco",
+        "position": {
+          "x": 3820,
+          "y": 62
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "Qualquer dúvida na hora de aplicar, é só me chamar aqui! Que Deus abençoe a sua igreja 🙏📖"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "espera_posvenda",
+        "type": "bloco",
+        "position": {
+          "x": 4500,
+          "y": 62
+        },
+        "data": {
+          "tipo": "esperar",
+          "config": {
+            "quantidade": 2,
+            "unidade": "dias",
+            "cancelaSeResponder": false
+          }
+        }
+      },
+      {
+        "id": "posvenda",
+        "type": "bloco",
+        "position": {
+          "x": 4840,
+          "y": 62
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "{nome}, já aplicou a prova? 😍 Se puder, me manda uma *foto ou vídeo* da aplicação aqui. Vou amar ver! E quem mandar ganha um *bônus surpresa* 🎁"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "marca_pendente",
+        "type": "bloco",
+        "position": {
+          "x": 2460,
+          "y": 430
+        },
+        "data": {
+          "tipo": "acao",
+          "config": {
+            "acoes": [
+              {
+                "tipo": "etiqueta_add",
+                "valor": "pix-pendente"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "rec_15min",
+        "type": "bloco",
+        "position": {
+          "x": 2800,
+          "y": 430
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/prova-biblica/03-lembrete-pix.mp3"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "espera_2h",
+        "type": "bloco",
+        "position": {
+          "x": 3140,
+          "y": 430
+        },
+        "data": {
+          "tipo": "esperar",
+          "config": {
+            "quantidade": 105,
+            "unidade": "minutos",
+            "cancelaSeResponder": false
+          }
+        }
+      },
+      {
+        "id": "cond_2h",
+        "type": "bloco",
+        "position": {
+          "x": 3480,
+          "y": 430
+        },
+        "data": {
+          "tipo": "condicao",
+          "config": {
+            "logica": "todas",
+            "regras": [
+              {
+                "tipo": "pix_pendente",
+                "operador": "sim",
+                "valor": ""
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "rec_2h",
+        "type": "bloco",
+        "position": {
+          "x": 3820,
+          "y": 430
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/prova-biblica/04-recuperacao.mp3"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "espera_24h",
+        "type": "bloco",
+        "position": {
+          "x": 4160,
+          "y": 430
+        },
+        "data": {
+          "tipo": "esperar",
+          "config": {
+            "quantidade": 20,
+            "unidade": "horas",
+            "cancelaSeResponder": false
+          }
+        }
+      },
+      {
+        "id": "cond_24h",
+        "type": "bloco",
+        "position": {
+          "x": 4500,
+          "y": 430
+        },
+        "data": {
+          "tipo": "condicao",
+          "config": {
+            "logica": "todas",
+            "regras": [
+              {
+                "tipo": "pix_pendente",
+                "operador": "sim",
+                "valor": ""
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "rec_24h",
+        "type": "bloco",
+        "position": {
+          "x": 4840,
+          "y": 430
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "Passando só pra lembrar: o kit ainda está saindo por R$13 🙏 Se não for o momento, tudo bem, que Deus te abençoe!"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "expirou",
+        "type": "bloco",
+        "position": {
+          "x": 2460,
+          "y": 706
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "texto",
+                "texto": "{nome}, seu Pix expirou ⏳ Se ainda quiser o kit, é só me mandar *QUERO* que eu gero um novo na hora 🙏"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "upsell_audio",
+        "type": "bloco",
+        "position": {
+          "x": 3480,
+          "y": -200
+        },
+        "data": {
+          "tipo": "mensagem",
+          "config": {
+            "itens": [
+              {
+                "tipo": "espera",
+                "segundos": 3,
+                "digitando": true
+              },
+              {
+                "tipo": "audio",
+                "url": "https://xclozr.vercel.app/funis/prova-biblica/05-upsell-guia.mp3"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_inicio_seguir_boas_vindas",
+        "source": "inicio",
+        "target": "boas_vindas",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_boas_vindas_seguir_menu_tipo",
+        "source": "boas_vindas",
+        "target": "menu_tipo",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_menu_tipo_opcao_0_demo_igreja",
+        "source": "menu_tipo",
+        "target": "demo_igreja",
+        "sourceHandle": "opcao_0",
+        "targetHandle": null
+      },
+      {
+        "id": "e_menu_tipo_opcao_1_demo_celula",
+        "source": "menu_tipo",
+        "target": "demo_celula",
+        "sourceHandle": "opcao_1",
+        "targetHandle": null
+      },
+      {
+        "id": "e_menu_tipo_opcao_2_demo_familia",
+        "source": "menu_tipo",
+        "target": "demo_familia",
+        "sourceHandle": "opcao_2",
+        "targetHandle": null
+      },
+      {
+        "id": "e_menu_tipo_opcao_3_demo_infantil",
+        "source": "menu_tipo",
+        "target": "demo_infantil",
+        "sourceHandle": "opcao_3",
+        "targetHandle": null
+      },
+      {
+        "id": "e_menu_tipo_sem_resposta_demo_igreja",
+        "source": "menu_tipo",
+        "target": "demo_igreja",
+        "sourceHandle": "sem_resposta",
+        "targetHandle": null
+      },
+      {
+        "id": "e_demo_igreja_seguir_oferta",
+        "source": "demo_igreja",
+        "target": "oferta",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_demo_celula_seguir_oferta",
+        "source": "demo_celula",
+        "target": "oferta",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_demo_familia_seguir_oferta",
+        "source": "demo_familia",
+        "target": "oferta",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_demo_infantil_seguir_oferta",
+        "source": "demo_infantil",
+        "target": "oferta",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_oferta_seguir_objecoes",
+        "source": "oferta",
+        "target": "objecoes",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_objecoes_sem_resposta_reengaja",
+        "source": "objecoes",
+        "target": "reengaja",
+        "sourceHandle": "sem_resposta",
+        "targetHandle": null
+      },
+      {
+        "id": "e_objecoes_comprar_pix",
+        "source": "objecoes",
+        "target": "pix",
+        "sourceHandle": "comprar",
+        "targetHandle": null
+      },
+      {
+        "id": "e_reengaja_seguir_pix",
+        "source": "reengaja",
+        "target": "pix",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix_pagou_marca_comprador",
+        "source": "pix",
+        "target": "marca_comprador",
+        "sourceHandle": "pagou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_marca_comprador_seguir_entrega",
+        "source": "marca_comprador",
+        "target": "entrega",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_entrega_seguir_espera_upsell",
+        "source": "entrega",
+        "target": "espera_upsell",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_espera_upsell_seguir_upsell_audio",
+        "source": "espera_upsell",
+        "target": "upsell_audio",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_upsell_aceitou_pix_upsell",
+        "source": "upsell",
+        "target": "pix_upsell",
+        "sourceHandle": "aceitou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix_upsell_pagou_entrega_upsell",
+        "source": "pix_upsell",
+        "target": "entrega_upsell",
+        "sourceHandle": "pagou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix_upsell_nao_pagou_lembrete_upsell",
+        "source": "pix_upsell",
+        "target": "lembrete_upsell",
+        "sourceHandle": "nao_pagou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_upsell_recusou_fechamento",
+        "source": "upsell",
+        "target": "fechamento",
+        "sourceHandle": "recusou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_upsell_sem_resposta_fechamento",
+        "source": "upsell",
+        "target": "fechamento",
+        "sourceHandle": "sem_resposta",
+        "targetHandle": null
+      },
+      {
+        "id": "e_entrega_upsell_seguir_fechamento",
+        "source": "entrega_upsell",
+        "target": "fechamento",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_fechamento_seguir_espera_posvenda",
+        "source": "fechamento",
+        "target": "espera_posvenda",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_espera_posvenda_seguir_posvenda",
+        "source": "espera_posvenda",
+        "target": "posvenda",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix_nao_pagou_marca_pendente",
+        "source": "pix",
+        "target": "marca_pendente",
+        "sourceHandle": "nao_pagou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_marca_pendente_seguir_rec_15min",
+        "source": "marca_pendente",
+        "target": "rec_15min",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_rec_15min_seguir_espera_2h",
+        "source": "rec_15min",
+        "target": "espera_2h",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_espera_2h_seguir_cond_2h",
+        "source": "espera_2h",
+        "target": "cond_2h",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_cond_2h_sim_rec_2h",
+        "source": "cond_2h",
+        "target": "rec_2h",
+        "sourceHandle": "sim",
+        "targetHandle": null
+      },
+      {
+        "id": "e_rec_2h_seguir_espera_24h",
+        "source": "rec_2h",
+        "target": "espera_24h",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_espera_24h_seguir_cond_24h",
+        "source": "espera_24h",
+        "target": "cond_24h",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      },
+      {
+        "id": "e_cond_24h_sim_rec_24h",
+        "source": "cond_24h",
+        "target": "rec_24h",
+        "sourceHandle": "sim",
+        "targetHandle": null
+      },
+      {
+        "id": "e_pix_expirou_expirou",
+        "source": "pix",
+        "target": "expirou",
+        "sourceHandle": "expirou",
+        "targetHandle": null
+      },
+      {
+        "id": "e_upsell_audio_seguir_upsell",
+        "source": "upsell_audio",
+        "target": "upsell",
+        "sourceHandle": "seguir",
+        "targetHandle": null
+      }
+    ]
+  },
+  "referencias": {
+    "produtos": {
+      "prod_prova": {
+        "nome": "Prova Bíblica 2026",
+        "preco_centavos": 1300
+      },
+      "prod_guia": {
+        "nome": "Guia Rápido: Como Ler a Bíblia Sem Desanimar",
+        "preco_centavos": 990
+      }
+    },
+    "funis": {},
+    "colunas": {}
+  }
+}
