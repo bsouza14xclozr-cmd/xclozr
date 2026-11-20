@@ -86,6 +86,17 @@ export function validarFunil(nodes: NoBloco[], edges: Edge[], produtos: { id: st
         if (vazio(c.palavrasSim)) add(n.id, "aviso", "Upsell sem palavras de aceite: toda resposta vira “recusou”.");
         if (!saiDe(n.id, "aceitou")) add(n.id, "aviso", "Upsell: a saída “Aceitou” não está ligada (normalmente vai para um Pix).");
         break;
+      case "orderbump":
+      case "downsell": {
+        const nomeB = n.data.tipo === "orderbump" ? "Order bump" : "Downsell";
+        if (vazio(c.produtoId)) add(n.id, "grave", `${nomeB} sem produto escolhido.`);
+        else if (!idsProdutos.has(String(c.produtoId))) add(n.id, "grave", `${nomeB} com um produto que foi apagado ou pausado.`);
+        if (vazio(c.texto)) add(n.id, "grave", `${nomeB} sem a mensagem da oferta.`);
+        if (vazio(c.palavrasSim)) add(n.id, "aviso", `${nomeB} sem palavras de aceite: toda resposta vira “recusou”.`);
+        if (!saiDe(n.id, "aceitou")) add(n.id, "aviso", `${nomeB}: a saída “Aceitou” não está ligada (${n.data.tipo === "orderbump" ? "ligue no bloco Pix do produto principal" : "ligue num Pix do produto mais barato"}).`);
+        if (n.data.tipo === "orderbump" && !saiDe(n.id, "recusou")) add(n.id, "grave", "Order bump: a saída “Recusou” não está ligada. Ligue também no Pix, senão quem recusar fica sem Pix.");
+        break;
+      }
       case "condicao": {
         const regras = (c.regras ?? []) as Regra[];
         if (!regras.length) add(n.id, "aviso", "Condição sem regras: sempre segue pelo “Sim”.");

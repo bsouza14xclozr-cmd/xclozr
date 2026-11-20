@@ -63,6 +63,14 @@ function BlocoNodeBase({ id, data, selected }: NodeProps<NoBloco>) {
             <li key={s.id} className="relative flex items-center justify-end px-3 py-1.5 text-[11px] font-medium" style={{ color: s.cor ?? "#edeff2" }}>
               {s.rotulo}
               {des && <span className="ml-1.5 rounded bg-elevado px-1.5 text-[10px] text-texto">{des.saidas[`${id}|${s.id}`] ?? 0}</span>}
+              {des?.ab[id] && (() => {
+                const r = des.ab[id].find((x) => x.saida === s.id);
+                return r ? (
+                  <span className="ml-1 rounded bg-limao/15 px-1.5 text-[10px] text-limao" title="Compraram · faturamento deste caminho">
+                    {r.compraram} compr. · {(r.receitaCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                  </span>
+                ) : null;
+              })()}
               <Handle
                 id={s.id}
                 type="source"

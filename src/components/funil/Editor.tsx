@@ -204,20 +204,28 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular, funilId }:
 
   // "Onde desistem": carrega o desempenho real do funil
   const inicioId = useMemo(() => nodes.find((n) => n.data.tipo === "inicio")?.id, [nodes]);
+  const abBlocosChave = useMemo(
+    () =>
+      nodes
+        .filter((n) => n.data.tipo === "randomizador")
+        .map((n) => n.id)
+        .join(","),
+    [nodes],
+  );
   useEffect(() => {
     if (!verDesempenho || !funilId) return;
     let vivo = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mostra o carregamento ao abrir/trocar o período
     setCarregandoDes(true);
     setErroDes(null);
-    carregarDesempenho(funilId, dias, inicioId)
+    carregarDesempenho(funilId, dias, inicioId, abBlocosChave ? abBlocosChave.split(",") : [])
       .then((d) => vivo && setDesempenho(d))
       .catch((e) => vivo && setErroDes((e as Error).message))
       .finally(() => vivo && setCarregandoDes(false));
     return () => {
       vivo = false;
     };
-  }, [verDesempenho, funilId, dias, inicioId, recarregarDes]);
+  }, [verDesempenho, funilId, dias, inicioId, abBlocosChave, recarregarDes]);
   const desempenhoVisivel = verDesempenho ? desempenho : null;
   const maioresPerdas = useMemo(() => {
     if (!desempenhoVisivel) return [];
@@ -226,7 +234,7 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular, funilId }:
         const b = desempenhoVisivel.blocos[n.id];
         const semResposta = blocoDe(n.data.tipo)
           .saidas(n.data.config)
-          .filter((x) => ["sem_resposta", "nao_pagou", "expirou", "recusou"].includes(x.id))
+          .filter((x) => ["sem_resposta", "nao_pagou", "expirou", "recusou"].includes(x.id) && !(n.data.tipo === "orderbump" && x.id === "recusou"))
           .reduce((t, x) => t + (desempenhoVisivel.saidas[`${n.id}|${x.id}`] ?? 0), 0);
         return { id: n.id, nome: blocoDe(n.data.tipo).nome, resumo: blocoDe(n.data.tipo).resumo(n.data.config), perdidos: (b?.parados ?? 0) + semResposta };
       })
@@ -500,6 +508,51 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular, funilId }:
                       ))}
                     </div>
                   ) : null}
+                  {Object.entries(desempenho.ab).map(([bloco, res]) => {
+                    const no = nodes.find((n) => n.id === bloco);
+                    if (!no || res.length < 2) return null;
+                    const nomes = blocoDe("randomizador").saidas(no.data.config);
+                    const porPessoa = (r: (typeof res)[number]) => (r.pessoas ? r.receitaCentavos / r.pessoas : 0);
+                    const suficiente = res.every((r) => r.pessoas >= 30);
+                    const melhor = [...res].sort((a, b) => porPessoa(b) - porPessoa(a))[0];
+                    return (
+                      <div key={bloco} className="flex flex-col gap-1.5 rounded-xl border border-borda bg-fundo p-2">
+                        <button type="button" onClick={() => irParaBloco(bloco)} className="text-left text-[11px] font-semibold text-suave hover:text-texto">
+                          🧪 Teste A/B · {blocoDe("randomizador").resumo(no.data.config)}
+                        </button>
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="text-suave">
+                              <th className="text-left font-medium">Caminho</th>
+                              <th className="text-right font-medium">Pessoas</th>
+                              <th className="text-right font-medium">Compraram</th>
+                              <th className="text-right font-medium">Faturou</th>
+                              <th className="text-right font-medium">Por pessoa</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {res.map((r) => (
+                              <tr key={r.saida} className={suficiente && r === melhor ? "text-limao" : ""}>
+                                <td className="max-w-[9rem] truncate py-0.5">
+                                  {suficiente && r === melhor ? "🏆 " : ""}
+                                  {nomes.find((x) => x.id === r.saida)?.rotulo ?? r.saida}
+                                </td>
+                                <td className="text-right">{r.pessoas}</td>
+                                <td className="text-right">
+                                  {r.compraram} <span className="text-suave">({pct(r.compraram, r.pessoas)})</span>
+                                </td>
+                                <td className="text-right">{(r.receitaCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
+                                <td className="text-right font-semibold">{(porPessoa(r) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <span className="text-[10px] text-suave">
+                          {suficiente ? "O vencedor é o que mais fatura por pessoa que entrou no caminho." : "Ainda pouco dado: espere pelo menos 30 pessoas em cada caminho antes de escolher o vencedor."}
+                        </span>
+                      </div>
+                    );
+                  })}
                   {desempenho.cortado && <span className="text-[11px] text-laranja">Histórico muito grande: mostrando parte dele. Escolha um período menor.</span>}
                   <span className="text-[11px] text-suave">Cada bloco mostra quantas pessoas passaram e quantas estão paradas nele agora. As setas mostram quantas seguiram por cada caminho.</span>
                 </>

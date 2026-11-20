@@ -15,11 +15,13 @@ export type Desempenho = {
   saidas: Record<string, number>;
   /** o histórico foi cortado por ser grande demais */
   cortado: boolean;
+  /** Teste A/B: por bloco randomizador, resultado de cada caminho */
+  ab: Record<string, { saida: string; pessoas: number; compraram: number; receitaCentavos: number }[]>;
 };
 
 const LIMITE = 60_000;
 
-export async function carregarDesempenho(funilId: string, dias: number | null, inicioId?: string): Promise<Desempenho> {
+export async function carregarDesempenho(funilId: string, dias: number | null, inicioId?: string, abBlocos: string[] = []): Promise<Desempenho> {
   const supabase = createClient();
   const desde = dias ? new Date(Date.now() - dias * 86_400_000).toISOString() : null;
 
@@ -70,7 +72,38 @@ export async function carregarDesempenho(funilId: string, dias: number | null, i
   // "entraram" = quem passou pelo bloco de início (ou, se não houver registro, o maior bloco)
   const inicio = inicioId ? blocos[inicioId]?.passaram : undefined;
   const entraram = inicio ?? Math.max(0, ...Object.values(blocos).map((b) => b.passaram));
-  return { entraram, compraram: compradores.size, blocos, saidas: porSaida, cortado };
+  // Teste A/B: quanto cada caminho vendeu (compras pagas dessas pessoas no período)
+  const ab: Desempenho["ab"] = {};
+  const caminhos: { bloco: string; saida: string; pessoas: Set<string> }[] = [];
+  for (const [k, pessoas] of saidas) {
+    const [bloco, saida] = k.split("|");
+    if (abBlocos.includes(bloco) && saida.startsWith("caminho_")) caminhos.push({ bloco, saida, pessoas });
+  }
+  if (caminhos.length) {
+    const todos = [...new Set(caminhos.flatMap((x) => [...x.pessoas]))];
+    const porContato = new Map<string, number>();
+    for (let i = 0; i < todos.length; i += 150) {
+      let qpg = supabase.from("pagamentos").select("contato_id, valor_centavos").eq("status", "pago").eq("simulacao", false).in("contato_id", todos.slice(i, i + 150));
+      if (desde) qpg = qpg.gte("criado_em", desde);
+      const { data } = await qpg.limit(5000);
+      for (const r of (data ?? []) as { contato_id: string; valor_centavos: number }[]) porContato.set(r.contato_id, (porContato.get(r.contato_id) ?? 0) + r.valor_centavos);
+    }
+    for (const x of caminhos) {
+      let compraram = 0;
+      let receita = 0;
+      for (const c of x.pessoas) {
+        const v = porContato.get(c);
+        if (v) {
+          compraram++;
+          receita += v;
+        }
+      }
+      (ab[x.bloco] ??= []).push({ saida: x.saida, pessoas: x.pessoas.size, compraram, receitaCentavos: receita });
+    }
+    for (const k of Object.keys(ab)) ab[k].sort((a, b) => a.saida.localeCompare(b.saida, undefined, { numeric: true }));
+  }
+
+  return { entraram, compraram: compradores.size, blocos, saidas: porSaida, cortado, ab };
 }
 
 export const DesempenhoContext = createContext<Desempenho | null>(null);

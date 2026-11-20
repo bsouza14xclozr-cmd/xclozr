@@ -18,6 +18,8 @@ export type TipoBloco =
   | "pix"
   | "entregar"
   | "upsell"
+  | "orderbump"
+  | "downsell"
   | "objecoes"
   | "humano"
   | "integracao"
@@ -332,6 +334,35 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
     resumo: (c) => `${((c.objecoes as Objecao[]) ?? []).length} objeções configuradas`,
   },
 
+  orderbump: {
+    tipo: "orderbump",
+    nome: "Order bump",
+    descricao: "Antes do Pix, oferece um item extra que entra no MESMO Pix (ex.: “leva o kit junto por + R$ 7?”).",
+    cor: VERDE,
+    icone: "M12 5v14M5 12h14",
+    grupo: "venda",
+    campos: [
+      { tipo: "produto", chave: "produtoId", rotulo: "Item extra oferecido", dica: "Se aceitar, o preço dele soma no Pix do próximo bloco Pix e ele é entregue junto, sozinho." },
+      {
+        tipo: "textarea",
+        chave: "texto",
+        rotulo: "Mensagem da oferta",
+        placeholder: "Antes de te mandar o Pix: quer levar também o {produto} por só + {preco}? Responde SIM 😊",
+        variaveis: true,
+        dica: "{produto} e {preco} são do item extra.",
+      },
+      { tipo: "texto", chave: "palavrasSim", rotulo: "Palavras de aceite", placeholder: "sim, quero, manda" },
+      { tipo: "numero", chave: "esperarMin", rotulo: "Esperar resposta por", min: 1, sufixo: "minutos" },
+    ],
+    padrao: () => ({ produtoId: "", texto: "", palavrasSim: "sim, quero, manda, bora, pode, aceito", esperarMin: 10 }),
+    saidas: () => [
+      { id: "aceitou", rotulo: "Aceitou (soma no Pix)", cor: VERDE },
+      { id: "recusou", rotulo: "Recusou", cor: VERMELHO },
+      { id: "sem_resposta", rotulo: "Não respondeu", cor: LARANJA },
+    ],
+    resumo: (c) => corta(texto(c, "texto")) || (texto(c, "produtoId") ? "Oferta do item extra" : "Escolha o item extra"),
+  },
+
   pix: {
     tipo: "pix",
     nome: "Gerar Pix",
@@ -390,6 +421,35 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
       { id: "sem_resposta", rotulo: "Não respondeu", cor: LARANJA },
     ],
     resumo: (c) => corta(texto(c, "texto")) || "Configure a oferta",
+  },
+
+  downsell: {
+    tipo: "downsell",
+    nome: "Downsell",
+    descricao: "Para quem recusou ou sumiu: oferece uma versão mais barata. Ligue “Aceitou” num Pix desse produto.",
+    cor: VERDE,
+    icone: "M12 5v14M19 12l-7 7-7-7",
+    grupo: "venda",
+    campos: [
+      { tipo: "produto", chave: "produtoId", rotulo: "Produto mais barato" },
+      {
+        tipo: "textarea",
+        chave: "texto",
+        rotulo: "Mensagem da oferta",
+        placeholder: "Entendo! Que tal começar só com o {produto} por {preco}? Responde SIM que te mando 😊",
+        variaveis: true,
+        dica: "{produto} e {preco} são do produto mais barato.",
+      },
+      { tipo: "texto", chave: "palavrasSim", rotulo: "Palavras de aceite", placeholder: "sim, quero, manda" },
+      { tipo: "numero", chave: "esperarMin", rotulo: "Esperar resposta por", min: 1, sufixo: "minutos" },
+    ],
+    padrao: () => ({ produtoId: "", texto: "", palavrasSim: "sim, quero, manda, bora, pode, aceito", esperarMin: 60 }),
+    saidas: () => [
+      { id: "aceitou", rotulo: "Aceitou", cor: VERDE },
+      { id: "recusou", rotulo: "Recusou", cor: VERMELHO },
+      { id: "sem_resposta", rotulo: "Não respondeu", cor: LARANJA },
+    ],
+    resumo: (c) => corta(texto(c, "texto")) || (texto(c, "produtoId") ? "Oferta mais barata" : "Escolha o produto mais barato"),
   },
 
   condicao: {

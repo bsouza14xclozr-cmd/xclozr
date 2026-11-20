@@ -159,6 +159,21 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
     case "upsell":
       await enviarTexto(ctx, c, cfg.texto ?? "");
       return esperarResposta(ctx, c, n, "upsell", minutos(cfg.esperarMin, 30));
+    // Order bump (antes do Pix: "leva junto?") e Downsell (oferta mais barata para quem recusou)
+    case "orderbump":
+    case "downsell": {
+      const oferta = cfg.produtoId ? await ctx.store.produto(String(cfg.produtoId)) : null;
+      const extra = oferta ? { produto: oferta.nome, preco: brl(oferta.preco_centavos) } : {};
+      if (n.data.tipo === "orderbump") {
+        if (c.campos.__bump) {
+          const campos = { ...c.campos };
+          delete campos.__bump;
+          await patch(ctx, c, { campos });
+        }
+      }
+      await enviarTexto(ctx, c, preencher(cfg.texto ?? "", c, extra));
+      return esperarResposta(ctx, c, n, "upsell", minutos(cfg.esperarMin, 15));
+    }
     case "esperar": {
       const mult = { segundos: 1 / 60, minutos: 1, horas: 60, dias: 1440 };
       const min = (Number(cfg.quantidade) || 1) * (mult[cfg.unidade] ?? 1);
@@ -238,27 +253,30 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
       const anterior = no(funil, funil.grafo.edges.find((e) => e.target === n.id)?.source ?? "");
       const tipoPix = anterior?.data.tipo === "upsell" ? "upsell" : "principal";
       const expira = minutos(cfg.expiraMin, 1440);
+      const bumpId = tipoPix === "principal" && c.campos.__bump ? String(c.campos.__bump) : null;
+      const bump = bumpId && bumpId !== produto.id ? await ctx.store.produto(bumpId) : null;
+      const cobrado = bump ? { ...produto, nome: `${produto.nome} + ${bump.nome}`, preco_centavos: produto.preco_centavos + bump.preco_centavos } : produto;
       let pix;
       try {
-        pix = await ctx.store.criarPix(c, produto, expira, tipoPix);
+        pix = await ctx.store.criarPix(c, cobrado, expira, tipoPix);
       } catch (e) {
         ctx.log?.(`falha ao gerar Pix: ${e.message}`);
         await enviarTexto(ctx, c, "Só um instante, já te mando o Pix 🙏");
         await patch(ctx, c, { robo_ativo: false });
         await ctx.store.avisarDono(
           c,
-          `Não consegui gerar o Pix de ${brl(produto.preco_centavos)} para {nome} ({telefone}): ${e.message}. O robô pausou nessa conversa — mande o Pix manualmente em Conversas.`.replace("{nome}", c.nome ?? "o cliente").replace("{telefone}", c.telefone)
+          `Não consegui gerar o Pix de ${brl(cobrado.preco_centavos)} para {nome} ({telefone}): ${e.message}. O robô pausou nessa conversa — mande o Pix manualmente em Conversas.`.replace("{nome}", c.nome ?? "o cliente").replace("{telefone}", c.telefone)
         );
         return { parar: true, finalizar: true };
       }
-      await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: produto.nome, preco: brl(produto.preco_centavos) }));
+      await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: cobrado.nome, preco: brl(cobrado.preco_centavos) }));
       if (pix.link) {
         await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):
 ${pix.link}`, esperaMs: 800 });
       } else {
         await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: 800 });
       }
-      await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix } });
+      await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix, bump: bump?.id ?? null } });
       await ctx.store.cancelarAgendamentos(c, ["pix_nao_pagou", "pix_expirou"]);
       await ctx.store.agendar(c, "pix_nao_pagou", addMin(ctx.store.agora(), minutos(cfg.esperarMin, 15)), { bloco: n.id, pagamento_id: pix.id });
       await ctx.store.agendar(c, "pix_expirou", addMin(ctx.store.agora(), expira), { bloco: n.id, pagamento_id: pix.id });
@@ -448,8 +466,9 @@ async function receberMensagem(ctx, c, funilPadrao, texto) {
       return;
     }
     case "upsell": {
-      if (!negou(texto) && contemAlguma(texto, palavras(cfg.palavrasSim))) return seguir("aceitou");
-      return seguir("recusou");
+      const aceitou = !negou(texto) && contemAlguma(texto, palavras(cfg.palavrasSim));
+      if (n.data.tipo === "orderbump" && aceitou && cfg.produtoId) await patch(ctx, c, { campos: { ...c.campos, __bump: String(cfg.produtoId) } });
+      return seguir(aceitou ? "aceitou" : "recusou");
     }
     case "esperar":
       if (ag.cancelaSeResponder) return seguir("seguir");
@@ -506,6 +525,21 @@ async function pixPago(ctx, c, pagamentoId) {
   if (!funil) return;
   await patch(ctx, c, { funil_id: funil.id });
   await ctx.store.registrarExecucao(c, funil.id, ativo.bloco, "pagou");
+  if (c.campos.__bump && ativo.tipo !== "upsell") {
+    const campos = { ...c.campos };
+    delete campos.__bump;
+    await patch(ctx, c, { campos });
+  }
+  if (ativo.bump) {
+    const bump = await ctx.store.produto(ativo.bump);
+    if (bump) {
+      await enviarTexto(ctx, c, preencher(bump.mensagem_entrega || "🎁 E aqui está o {produto} que você levou junto:", c, { produto: bump.nome, preco: brl(bump.preco_centavos) }));
+      if (bump.entrega_conteudo) {
+        if (bump.entrega_tipo === "arquivo") await enviar(ctx, c, { tipo: "arquivo", url: bump.entrega_conteudo, nome: bump.nome, esperaMs: 1e3 });
+        else await enviar(ctx, c, { tipo: "texto", texto: bump.entrega_conteudo, esperaMs: 1e3 });
+      }
+    }
+  }
   await executarDesde(ctx, c, funil, proximo(funil, ativo.bloco, "pagou"), "");
 }
 
