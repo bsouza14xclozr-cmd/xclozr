@@ -10,6 +10,7 @@ import {
 } from "@/lib/crm/tipos";
 import type { Crm } from "@/lib/crm/useCrm";
 import { AbasCrm, EtiquetaChip, inputCls } from "./comum";
+import { excluirLeads } from "./AcoesContato";
 import { FichaContato } from "./FichaContato";
 
 type DadosKanban = Pick<
@@ -29,28 +30,47 @@ function Cartao({
   c,
   crm,
   onAbrir,
+  selecionando = false,
+  marcado = false,
 }: {
   c: Contato;
   crm: DadosKanban;
   onAbrir: () => void;
+  selecionando?: boolean;
+  marcado?: boolean;
 }) {
   return (
     <li
-      draggable
+      draggable={!selecionando}
       onDragStart={(e: DragEvent) => {
         e.dataTransfer.setData("text/contato", c.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className="cursor-grab rounded-xl border border-borda bg-cartao p-3 shadow-sm hover:border-[#3a404c] active:cursor-grabbing"
+      className={`rounded-xl border bg-cartao p-3 shadow-sm ${
+        selecionando ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+      } ${marcado ? "border-vermelho bg-vermelho/10" : "border-borda hover:border-[#3a404c]"}`}
     >
       <button
         type="button"
         onClick={onAbrir}
+        aria-pressed={selecionando ? marcado : undefined}
         className="flex w-full flex-col gap-2 text-left"
       >
         <span className="flex items-start justify-between gap-2">
-          <span className="truncate text-sm font-semibold">
-            {nomeContato(c)}
+          <span className="flex min-w-0 items-center gap-2">
+            {selecionando && (
+              <span
+                aria-hidden
+                className={`grid h-4 w-4 shrink-0 place-items-center rounded border text-[10px] font-bold ${
+                  marcado ? "border-vermelho bg-vermelho text-fundo" : "border-suave"
+                }`}
+              >
+                {marcado ? "✓" : ""}
+              </span>
+            )}
+            <span className="truncate text-sm font-semibold">
+              {nomeContato(c)}
+            </span>
           </span>
           <span className="shrink-0 text-[11px] text-suave">
             {tempoRelativo(c.ultima_msg_em ?? c.criado_em)}
@@ -100,6 +120,47 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
   const [sobre, setSobre] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const [filtroEtiqueta, setFiltroEtiqueta] = useState("");
+  const [selecionando, setSelecionando] = useState(false);
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const [excluindo, setExcluindo] = useState(false);
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const alternar = (id: string) =>
+    setMarcados((m) => {
+      const n = new Set(m);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const marcarVarios = (ids: string[], marcar: boolean) =>
+    setMarcados((m) => {
+      const n = new Set(m);
+      for (const id of ids) {
+        if (marcar) n.add(id);
+        else n.delete(id);
+      }
+      return n;
+    });
+  const sairSelecao = () => {
+    setSelecionando(false);
+    setMarcados(new Set());
+  };
+  async function excluirMarcados() {
+    setAviso(null);
+    setExcluindo(true);
+    try {
+      const ids = [...marcados];
+      const feitos = await excluirLeads(ids);
+      if (feitos) {
+        ids.forEach((id) => crm.removerContato(id));
+        setAviso({ ok: true, texto: feitos === 1 ? "1 lead excluído." : `${feitos} leads excluídos.` });
+        sairSelecao();
+      }
+    } catch (e) {
+      setAviso({ ok: false, texto: (e as Error).message });
+    } finally {
+      setExcluindo(false);
+    }
+  }
 
   const filtrados = useMemo(() => {
     const b = busca.trim().toLowerCase();
@@ -199,7 +260,48 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
             </option>
           ))}
         </select>
+        {!selecionando && (
+          <button
+            type="button"
+            onClick={() => {
+              setAviso(null);
+              setSelecionando(true);
+            }}
+            className="min-h-11 rounded-[10px] border border-borda px-4 text-sm text-suave hover:bg-elevado hover:text-texto"
+          >
+            ☑ Selecionar
+          </button>
+        )}
       </div>
+
+      {selecionando && (
+        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-vermelho/40 bg-lateral px-3 py-2 text-sm shadow-lg">
+          <b>{marcados.size === 1 ? "1 selecionado" : `${marcados.size} selecionados`}</b>
+          <span className="text-xs text-suave">Toque nos cartões para marcar</span>
+          <button type="button" onClick={() => marcarVarios(filtrados.map((c) => c.id), true)} className="min-h-9 rounded-lg px-2 text-xs text-limao hover:underline">
+            Marcar todos ({filtrados.length})
+          </button>
+          {marcados.size > 0 && (
+            <button type="button" onClick={() => setMarcados(new Set())} className="min-h-9 rounded-lg px-2 text-xs text-suave hover:text-texto">
+              Desmarcar
+            </button>
+          )}
+          <span className="ml-auto flex gap-2">
+            <button type="button" onClick={sairSelecao} className="min-h-9 rounded-[10px] border border-borda px-3 text-xs hover:bg-elevado">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={!marcados.size || excluindo}
+              onClick={() => void excluirMarcados()}
+              className="min-h-9 rounded-[10px] bg-vermelho px-3 text-xs font-bold text-fundo hover:brightness-110 disabled:opacity-50"
+            >
+              {excluindo ? "Excluindo…" : `Excluir ${marcados.size || ""}`.trim()}
+            </button>
+          </span>
+        </div>
+      )}
+      {aviso && <p className={`text-sm ${aviso.ok ? "text-limao" : "text-vermelho"}`}>{aviso.texto}</p>}
 
       {crm.erro && <p className="text-sm text-vermelho">{crm.erro}</p>}
       {crm.carregando && <p className="text-sm text-suave">Carregando…</p>}
@@ -267,8 +369,19 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
                           />
                           {col.nome}
                         </h2>
-                        <span className="rounded-full bg-elevado px-2 py-0.5 text-[11px] font-semibold text-suave">
-                          {itens.length}
+                        <span className="flex items-center gap-1.5">
+                          {selecionando && itens.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => marcarVarios(itens.map((c) => c.id), !itens.every((c) => marcados.has(c.id)))}
+                              className="rounded-md px-1.5 py-0.5 text-[11px] text-limao hover:bg-elevado"
+                            >
+                              {itens.every((c) => marcados.has(c.id)) ? "desmarcar" : "marcar coluna"}
+                            </button>
+                          )}
+                          <span className="rounded-full bg-elevado px-2 py-0.5 text-[11px] font-semibold text-suave">
+                            {itens.length}
+                          </span>
                         </span>
                       </div>
                       <span className="text-[11px] text-suave">
@@ -284,7 +397,9 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
                           key={c.id}
                           c={c}
                           crm={crm}
-                          onAbrir={() => setAberto(c.id)}
+                          selecionando={selecionando}
+                          marcado={marcados.has(c.id)}
+                          onAbrir={() => (selecionando ? alternar(c.id) : setAberto(c.id))}
                         />
                       ))}
                       {itens.length === 0 && (

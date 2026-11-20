@@ -57,6 +57,28 @@ export async function excluirLead(contatoId: string, nome: string) {
   return true;
 }
 
+/** Exclui vários leads de uma vez. Pergunta antes. Devolve quantos excluiu (0 se cancelou). */
+export async function excluirLeads(ids: string[]) {
+  if (!ids.length) return 0;
+  const supabase = createClient();
+  let compras = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const { count } = await supabase.from("pagamentos").select("id", { count: "exact", head: true }).in("contato_id", ids.slice(i, i + 100)).eq("status", "pago");
+    compras += count ?? 0;
+  }
+  const qtd = ids.length === 1 ? "1 lead" : `${ids.length} leads`;
+  const aviso =
+    compras > 0
+      ? `Excluir ${qtd}? Entre eles há ${compras} compra(s) paga(s): elas vão sumir dos seus relatórios de vendas e de lucro. Conversas, Pix e histórico também somem. Isso não pode ser desfeito.`
+      : `Excluir ${qtd}? As conversas, os Pix e o histórico deles somem do XClozr. Isso não pode ser desfeito.`;
+  if (!window.confirm(aviso)) return 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const { error } = await supabase.from("contatos").delete().in("id", ids.slice(i, i + 100));
+    if (error) throw new Error("Não consegui excluir todos os leads. Atualize a página e confira.");
+  }
+  return ids.length;
+}
+
 /** Bloco de ações para a ficha do contato e para a tela de Conversas. */
 export function AcoesContato({
   contatoId,
