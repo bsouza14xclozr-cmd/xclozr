@@ -32,6 +32,7 @@ export type ItemMensagem =
   | { tipo: "imagem"; url: string; legenda: string }
   | { tipo: "video"; url: string; legenda: string }
   | { tipo: "audio"; url: string }
+  | { tipo: "voz"; texto: string }
   | { tipo: "arquivo"; url: string; nome: string }
   | { tipo: "espera"; segundos: number; digitando: boolean };
 
@@ -243,8 +244,8 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
     resumo: (c) => {
       const itens = (c.itens as ItemMensagem[]) ?? [];
       if (!itens.length) return "Sem conteúdo";
-      const primeiro = itens.find((i) => i.tipo === "texto") as { texto: string } | undefined;
-      const extras = itens.filter((i) => i.tipo !== "texto" && i.tipo !== "espera").length;
+      const primeiro = itens.find((i) => i.tipo === "texto" || i.tipo === "voz") as { texto: string } | undefined;
+      const extras = itens.filter((i) => i.tipo !== "texto" && i.tipo !== "espera" && i.tipo !== "voz").length;
       const base = primeiro?.texto ? corta(primeiro.texto) : "";
       return [base, extras ? `+ ${extras} mídia(s)` : ""].filter(Boolean).join(" ") || `${itens.length} item(ns)`;
     },

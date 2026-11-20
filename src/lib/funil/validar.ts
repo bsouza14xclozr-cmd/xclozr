@@ -50,6 +50,10 @@ export function validarFunil(nodes: NoBloco[], edges: Edge[], produtos: { id: st
         if (!conteudo.length) add(n.id, "aviso", "Mensagem sem conteúdo.");
         for (const i of conteudo) {
           if (i.tipo === "texto" && vazio(i.texto)) add(n.id, "aviso", "Mensagem com um texto em branco.");
+          if (i.tipo === "voz") {
+            if (vazio(i.texto)) add(n.id, "aviso", "Mensagem com um áudio de voz sem texto.");
+            continue;
+          }
           if (i.tipo !== "texto" && vazio(i.url)) add(n.id, "grave", `Mensagem com ${i.tipo === "audio" ? "áudio" : i.tipo === "video" ? "vídeo" : i.tipo} sem arquivo enviado.`);
         }
         break;

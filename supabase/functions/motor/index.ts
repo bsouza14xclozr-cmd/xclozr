@@ -12,6 +12,7 @@ import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
 import { rotasNumeros } from "./numeros.ts";
 import { MODELO_PADRAO, responderIA, testarIA, type Provedor } from "./ia.ts";
 import { ETIQUETA_SAIR, ehPedidoSair, processarDisparos } from "./disparos.ts";
+import { audioComVoz } from "./voz.ts";
 import { cobrancaLivePixPaga, configGateway, pagamentoLivePix, pedidoPago, pixAsaasPago, rotaGateway, type ConfigGateway } from "./gateway.ts";
 
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -69,6 +70,7 @@ function ctxPara(donoId: string, simulacao: boolean, cfg: Record<string, string>
     envio: simulacao ? envioSimulado : criarEnvioEvolution(db, cfg),
     log: (m) => console.log(`[motor ${donoId.slice(0, 6)}] ${m}`),
     ia: (c, cfgBloco) => responderIA(db, donoId, c, cfgBloco),
+    voz: (_c, texto) => audioComVoz(db, donoId, texto),
   };
 }
 

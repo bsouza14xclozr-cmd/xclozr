@@ -84,7 +84,7 @@ export interface Envio {
 }
 
 export type RespostaIA = { resposta: string; concluido: boolean } | { erro: string };
-export type Ctx = { store: Store; envio: Envio; log?: (m: string) => void; ia?: (c: Contato, cfg: Config) => Promise<RespostaIA> };
+export type Ctx = { store: Store; envio: Envio; log?: (m: string) => void; ia?: (c: Contato, cfg: Config) => Promise<RespostaIA>; voz?: (c: Contato, texto: string) => Promise<string | null> };
 
 /* ------------------------------------------------------------------ */
 /* Utilidades                                                          */
@@ -275,6 +275,19 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
           await enviar(ctx, c, { tipo: item.tipo, url: item.url, legenda: preencher(item.legenda ?? "", c), esperaMs: espera });
         } else if (item.tipo === "audio" && item.url) {
           await enviar(ctx, c, { tipo: "audio", url: item.url, esperaMs: espera });
+        } else if (item.tipo === "voz") {
+          // áudio com a voz clonada do dono; se falhar, manda o mesmo texto escrito (a conversa não trava)
+          const t = preencher(item.texto ?? "", c).trim();
+          if (t) {
+            let url: string | null = null;
+            try {
+              url = ctx.voz ? await ctx.voz(c, t) : null;
+            } catch (e) {
+              ctx.log?.(`voz clonada falhou: ${(e as Error).message}`);
+            }
+            if (url) await enviar(ctx, c, { tipo: "audio", url, esperaMs: espera });
+            else await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs: espera });
+          }
         } else if (item.tipo === "arquivo" && item.url) {
           await enviar(ctx, c, { tipo: "arquivo", url: item.url, nome: item.nome || "arquivo", esperaMs: espera });
         }

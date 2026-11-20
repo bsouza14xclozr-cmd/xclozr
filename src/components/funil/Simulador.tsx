@@ -50,7 +50,11 @@ function Bolha({ m }: { m: Msg }) {
             {m.tipo === "audio" ? "▶ Áudio" : m.tipo === "imagem" ? "🖼 Imagem" : m.tipo === "video" ? "🎬 Vídeo" : "📎 Arquivo"}
           </span>
         )}
-        {m.conteudo || (midia ? <span className="break-all text-[11px] text-suave">{m.midia_url}</span> : null)}
+        {m.tipo === "audio" && m.midia_url ? (
+          <audio src={m.midia_url} controls preload="none" className="h-9 max-w-full" />
+        ) : (
+          m.conteudo || (midia ? <span className="break-all text-[11px] text-suave">{m.midia_url}</span> : null)
+        )}
       </div>
     </div>
   );

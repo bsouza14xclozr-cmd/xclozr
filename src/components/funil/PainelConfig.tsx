@@ -178,6 +178,7 @@ const ROTULO_ITEM: Record<ItemMensagem["tipo"], string> = {
   imagem: "Imagem",
   video: "Vídeo",
   audio: "Áudio",
+  voz: "🎙️ Áudio com minha voz",
   arquivo: "Arquivo",
   espera: "Espera",
 };
@@ -191,6 +192,8 @@ function novoItem(tipo: ItemMensagem["tipo"]): ItemMensagem {
       return { tipo, url: "", legenda: "" };
     case "audio":
       return { tipo, url: "" };
+    case "voz":
+      return { tipo, texto: "" };
     case "arquivo":
       return { tipo, url: "", nome: "" };
     case "espera":
@@ -252,6 +255,21 @@ function ItensMensagem({ id, valor, onChange }: { id: string; valor: ItemMensage
               <span className="text-[11px] text-suave">Enviado como áudio gravado na hora, com “gravando áudio…” antes.</span>
             </>
           )}
+          {item.tipo === "voz" && (
+            <>
+              <textarea
+                aria-label="Texto falado com a sua voz"
+                rows={3}
+                className={areaCls}
+                placeholder="Oi {nome}! Vi que você chamou aqui, já te explico tudinho, tá?"
+                value={item.texto}
+                onChange={(e) => set(i, { ...item, texto: e.target.value })}
+              />
+              <span className="text-[11px] text-suave">
+                O robô fala este texto com a sua voz clonada (menu Agente de IA → Minha voz) e manda como áudio. Com {"{nome}"} cada cliente recebe um áudio com o nome dele. Se a voz não estiver pronta, vai como texto.
+              </span>
+            </>
+          )}
           {item.tipo === "arquivo" && (
             <>
               <CampoMidia tipo="arquivo" url={item.url} onChange={(url, nome) => set(i, { ...item, url, nome: item.nome || nome || "" })} />
@@ -271,7 +289,7 @@ function ItensMensagem({ id, valor, onChange }: { id: string; valor: ItemMensage
               <span className="text-suave">segundos</span>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={item.digitando} onChange={(e) => set(i, { ...item, digitando: e.target.checked })} className="accent-limao" />
-                {valor[i + 1]?.tipo === "audio" ? "mostrar “gravando áudio…”" : "mostrar “digitando…”"}
+                {valor[i + 1]?.tipo === "audio" || valor[i + 1]?.tipo === "voz" ? "mostrar “gravando áudio…”" : "mostrar “digitando…”"}
               </label>
             </div>
           )}

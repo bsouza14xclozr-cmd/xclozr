@@ -138,6 +138,18 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
           await enviar(ctx, c, { tipo: item.tipo, url: item.url, legenda: preencher(item.legenda ?? "", c), esperaMs: espera });
         } else if (item.tipo === "audio" && item.url) {
           await enviar(ctx, c, { tipo: "audio", url: item.url, esperaMs: espera });
+        } else if (item.tipo === "voz") {
+          const t = preencher(item.texto ?? "", c).trim();
+          if (t) {
+            let url = null;
+            try {
+              url = ctx.voz ? await ctx.voz(c, t) : null;
+            } catch (e) {
+              ctx.log?.(`voz clonada falhou: ${e.message}`);
+            }
+            if (url) await enviar(ctx, c, { tipo: "audio", url, esperaMs: espera });
+            else await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs: espera });
+          }
         } else if (item.tipo === "arquivo" && item.url) {
           await enviar(ctx, c, { tipo: "arquivo", url: item.url, nome: item.nome || "arquivo", esperaMs: espera });
         }
@@ -1438,6 +1450,59 @@ async function processarDisparos(db2, cfg) {
   return feitos;
 }
 
+// supabase/functions/motor/voz.ts
+var API = "https://api.elevenlabs.io/v1";
+var MODELOS = { qualidade: "eleven_multilingual_v2", economia: "eleven_flash_v2_5" };
+async function configVoz(db2, donoId) {
+  const { data } = await db2.from("voz_config").select("apikey, voice_id, modelo").eq("dono_id", donoId).maybeSingle();
+  return data ?? null;
+}
+async function sha(t) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+function erroEleven(status, texto) {
+  let msg = texto;
+  try {
+    const j = JSON.parse(texto);
+    msg = j?.detail?.message ?? j?.detail?.status ?? (typeof j?.detail === "string" ? j.detail : "") ?? texto;
+  } catch {
+  }
+  msg = String(msg || "sem detalhes").slice(0, 220);
+  if (status === 401) return new Error(`ElevenLabs recusou a chave de API (${msg})`);
+  if (/quota|credits|character_limit/i.test(msg)) return new Error(`Os créditos da ElevenLabs acabaram este mês (${msg})`);
+  if (/can_not_use_instant_voice_cloning|subscription|upgrade|plan/i.test(msg)) return new Error(`Seu plano da ElevenLabs não permite clonar voz: precisa do Starter ou maior (${msg})`);
+  return new Error(`ElevenLabs recusou (${status}): ${msg}`);
+}
+async function audioComVoz(db2, donoId, texto, cfg) {
+  const t = texto.trim().slice(0, 2500);
+  if (!t) return null;
+  const c = cfg ?? await configVoz(db2, donoId);
+  if (!c?.apikey || !c.voice_id) return null;
+  const modelo = MODELOS[c.modelo ?? "qualidade"] ?? MODELOS.qualidade;
+  const nome = `${await sha(`${c.voice_id}|${modelo}|${t}`)}.mp3`;
+  const caminho = `${donoId}/${nome}`;
+  const publica = db2.storage.from("voz").getPublicUrl(caminho).data.publicUrl;
+  const { data: achou } = await db2.storage.from("voz").list(donoId, { search: nome, limit: 1 });
+  if (achou?.some((f) => f.name === nome)) return publica;
+  const r = await fetch(`${API}/text-to-speech/${encodeURIComponent(c.voice_id)}?output_format=mp3_44100_128`, {
+    method: "POST",
+    headers: { "xi-api-key": c.apikey, "content-type": "application/json", accept: "audio/mpeg" },
+    body: JSON.stringify({
+      text: t,
+      model_id: modelo,
+      language_code: modelo === MODELOS.economia ? "pt" : void 0,
+      voice_settings: { stability: 0.45, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true }
+    }),
+    signal: AbortSignal.timeout(45e3)
+  });
+  if (!r.ok) throw erroEleven(r.status, await r.text());
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  const { error } = await db2.storage.from("voz").upload(caminho, bytes, { contentType: "audio/mpeg", upsert: true });
+  if (error) throw new Error(`não consegui guardar o áudio (${error.message})`);
+  return publica;
+}
+
 // supabase/functions/motor/index.ts
 var db = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), {
   auth: { persistSession: false }
@@ -1479,7 +1544,8 @@ function ctxPara(donoId, simulacao, cfg) {
     store: criarStore(db, donoId),
     envio: simulacao ? envioSimulado : criarEnvioEvolution(db, cfg),
     log: (m) => console.log(`[motor ${donoId.slice(0, 6)}] ${m}`),
-    ia: (c, cfgBloco) => responderIA(db, donoId, c, cfgBloco)
+    ia: (c, cfgBloco) => responderIA(db, donoId, c, cfgBloco),
+    voz: (_c, texto) => audioComVoz(db, donoId, texto)
   };
 }
 async function rotaIA(req) {
