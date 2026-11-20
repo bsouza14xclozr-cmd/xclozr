@@ -81,7 +81,7 @@ export function EditorCarregado() {
           </Link>
         </div>
       )}
-      {estado.fase === "pronto" && <EditorFunil inicial={estado.dados} produtos={estado.produtos} funis={estado.funis} crm={estado.crm} onSalvar={salvar} simular={simular} />}
+      {estado.fase === "pronto" && <EditorFunil inicial={estado.dados} produtos={estado.produtos} funis={estado.funis} crm={estado.crm} onSalvar={salvar} simular={simular} funilId={id} />}
     </div>
   );
 }

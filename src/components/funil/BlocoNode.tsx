@@ -4,6 +4,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { memo } from "react";
 import { blocoDe } from "@/lib/funil/blocos";
 import type { NoBloco } from "@/lib/funil/grafo";
+import { pct, useDesempenho } from "@/lib/funil/desempenho";
 
 export function IconeBloco({ path, cor, tamanho = 16 }: { path: string; cor: string; tamanho?: number }) {
   return (
@@ -13,8 +14,10 @@ export function IconeBloco({ path, cor, tamanho = 16 }: { path: string; cor: str
   );
 }
 
-function BlocoNodeBase({ data, selected }: NodeProps<NoBloco>) {
+function BlocoNodeBase({ id, data, selected }: NodeProps<NoBloco>) {
   const def = blocoDe(data.tipo);
+  const des = useDesempenho();
+  const est = des?.blocos[id];
   const saidas = def.saidas(data.config);
   const inicio = data.tipo === "inicio";
 
@@ -41,11 +44,25 @@ function BlocoNodeBase({ data, selected }: NodeProps<NoBloco>) {
 
       <p className="px-3 py-2.5 text-xs leading-relaxed text-suave">{def.resumo(data.config)}</p>
 
+      {des && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-borda bg-fundo/60 px-3 py-2 text-[11px]">
+          <span title="Pessoas que passaram por este bloco">
+            👥 <b className="text-texto">{est?.passaram ?? 0}</b> <span className="text-suave">({pct(est?.passaram ?? 0, des.entraram)})</span>
+          </span>
+          {(est?.parados ?? 0) > 0 && (
+            <span className="font-semibold text-laranja" title="Pessoas paradas neste bloco agora">
+              ⏸ {est?.parados} parado{est?.parados === 1 ? "" : "s"} aqui
+            </span>
+          )}
+        </div>
+      )}
+
       {saidas.length > 0 && (
         <ul className="flex flex-col border-t border-borda py-1">
           {saidas.map((s) => (
             <li key={s.id} className="relative flex items-center justify-end px-3 py-1.5 text-[11px] font-medium" style={{ color: s.cor ?? "#edeff2" }}>
               {s.rotulo}
+              {des && <span className="ml-1.5 rounded bg-elevado px-1.5 text-[10px] text-texto">{des.saidas[`${id}|${s.id}`] ?? 0}</span>}
               <Handle
                 id={s.id}
                 type="source"

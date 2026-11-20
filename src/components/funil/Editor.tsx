@@ -24,6 +24,7 @@ import { BlocoNode, IconeBloco } from "./BlocoNode";
 import { OpcoesCrmContext, PainelConfig, type Opcao, type OpcoesCrm } from "./PainelConfig";
 import { validarFunil, type Problema } from "@/lib/funil/validar";
 import { Simulador, type ChamarSimulador } from "./Simulador";
+import { carregarDesempenho, DesempenhoContext, pct, type Desempenho } from "@/lib/funil/desempenho";
 
 const nodeTypes: NodeTypes = { bloco: BlocoNode };
 const TIPO_ARRASTE = "application/xclozr-bloco";
@@ -37,6 +38,7 @@ type Props = {
   crm?: OpcoesCrm;
   onSalvar: (dados: DadosFunil) => Promise<void>;
   simular?: ChamarSimulador;
+  funilId?: string;
 };
 
 function Paleta({ onAdicionar }: { onAdicionar: (tipo: TipoBloco) => void }) {
@@ -79,8 +81,14 @@ function Paleta({ onAdicionar }: { onAdicionar: (tipo: TipoBloco) => void }) {
   );
 }
 
-function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Props, "crm">) {
+function EditorInterno({ inicial, produtos, funis, onSalvar, simular, funilId }: Omit<Props, "crm">) {
   const [testando, setTestando] = useState(false);
+  const [verDesempenho, setVerDesempenho] = useState(false);
+  const [dias, setDias] = useState<number | null>(30);
+  const [desempenho, setDesempenho] = useState<Desempenho | null>(null);
+  const [carregandoDes, setCarregandoDes] = useState(false);
+  const [erroDes, setErroDes] = useState<string | null>(null);
+  const [recarregarDes, setRecarregarDes] = useState(0);
   const [blocoTeste, setBlocoTeste] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<NoBloco>(inicial.grafo.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(inicial.grafo.edges);
@@ -194,6 +202,39 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
     return m;
   }, [problemas]);
 
+  // "Onde desistem": carrega o desempenho real do funil
+  const inicioId = useMemo(() => nodes.find((n) => n.data.tipo === "inicio")?.id, [nodes]);
+  useEffect(() => {
+    if (!verDesempenho || !funilId) return;
+    let vivo = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mostra o carregamento ao abrir/trocar o período
+    setCarregandoDes(true);
+    setErroDes(null);
+    carregarDesempenho(funilId, dias, inicioId)
+      .then((d) => vivo && setDesempenho(d))
+      .catch((e) => vivo && setErroDes((e as Error).message))
+      .finally(() => vivo && setCarregandoDes(false));
+    return () => {
+      vivo = false;
+    };
+  }, [verDesempenho, funilId, dias, inicioId, recarregarDes]);
+  const desempenhoVisivel = verDesempenho ? desempenho : null;
+  const maioresPerdas = useMemo(() => {
+    if (!desempenhoVisivel) return [];
+    return nodes
+      .map((n) => {
+        const b = desempenhoVisivel.blocos[n.id];
+        const semResposta = blocoDe(n.data.tipo)
+          .saidas(n.data.config)
+          .filter((x) => ["sem_resposta", "nao_pagou", "expirou", "recusou"].includes(x.id))
+          .reduce((t, x) => t + (desempenhoVisivel.saidas[`${n.id}|${x.id}`] ?? 0), 0);
+        return { id: n.id, nome: blocoDe(n.data.tipo).nome, resumo: blocoDe(n.data.tipo).resumo(n.data.config), perdidos: (b?.parados ?? 0) + semResposta };
+      })
+      .filter((x) => x.perdidos > 0)
+      .sort((a, b) => b.perdidos - a.perdidos)
+      .slice(0, 3);
+  }, [desempenhoVisivel, nodes]);
+
   // no teste, destaca o bloco onde a conversa está
   const nodesExibidos = useMemo(
     () =>
@@ -211,8 +252,20 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
   const edgesColoridas = useMemo(() => {
     const cores = new Map<string, string>();
     for (const n of nodes) for (const s of blocoDe(n.data.tipo).saidas(n.data.config)) cores.set(`${n.id}:${s.id}`, s.cor ?? "#5ed98c");
-    return edges.map((e) => ({ ...e, style: { strokeWidth: 2, stroke: cores.get(`${e.source}:${e.sourceHandle}`) ?? "#5ed98c" } }));
-  }, [nodes, edges]);
+    return edges.map((e) => {
+      const base = { ...e, style: { strokeWidth: 2, stroke: cores.get(`${e.source}:${e.sourceHandle}`) ?? "#5ed98c" } };
+      if (!desempenhoVisivel) return base;
+      const n = desempenhoVisivel.saidas[`${e.source}|${e.sourceHandle ?? "seguir"}`] ?? 0;
+      return {
+        ...base,
+        label: `${n} ${n === 1 ? "pessoa" : "pessoas"}`,
+        labelStyle: { fill: "#edeff2", fontSize: 11, fontWeight: 600 },
+        labelBgStyle: { fill: "#161a21" },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 6,
+      };
+    });
+  }, [nodes, edges, desempenhoVisivel]);
 
   const irParaBloco = useCallback(
     (id: string) => {
@@ -354,6 +407,18 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
             </div>
           )}
         </div>
+        {funilId && (
+          <button
+            type="button"
+            aria-pressed={verDesempenho}
+            onClick={() => setVerDesempenho((v) => !v)}
+            className={`flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold ${
+              verDesempenho ? "border-laranja/60 bg-[#241b0e] text-laranja" : "border-borda bg-cartao text-texto hover:bg-elevado"
+            }`}
+          >
+            📊 Onde desistem
+          </button>
+        )}
         {simular && (
           <button
             type="button"
@@ -386,6 +451,62 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
         <Paleta onAdicionar={(t) => adicionar(t)} />
 
         <div ref={quadro} className="relative min-h-[420px] flex-1" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+          {verDesempenho && (
+            <div className="absolute top-3 left-3 z-10 flex max-w-[min(30rem,calc(100%-1.5rem))] flex-col gap-2 rounded-2xl border border-borda bg-cartao/95 p-3 text-sm shadow-2xl backdrop-blur">
+              <div className="flex flex-wrap items-center gap-2">
+                <b>Onde as pessoas desistem</b>
+                <label htmlFor="periodo-desempenho" className="sr-only">
+                  Período
+                </label>
+                <select
+                  id="periodo-desempenho"
+                  value={dias ?? 0}
+                  onChange={(e) => setDias(Number(e.target.value) || null)}
+                  className="min-h-8 rounded-lg border border-borda bg-fundo px-2 text-xs"
+                >
+                  <option value={1}>Hoje (24h)</option>
+                  <option value={7}>Últimos 7 dias</option>
+                  <option value={30}>Últimos 30 dias</option>
+                  <option value={0}>Tudo</option>
+                </select>
+                <button type="button" onClick={() => setRecarregarDes((x) => x + 1)} className="min-h-8 rounded-lg px-2 text-xs text-suave hover:bg-elevado hover:text-texto">
+                  ↻ Atualizar
+                </button>
+              </div>
+              {carregandoDes && <span className="text-xs text-suave">Carregando…</span>}
+              {erroDes && <span className="text-xs text-vermelho">{erroDes}</span>}
+              {desempenho && !carregandoDes && (
+                <>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <span>
+                      <b className="text-texto">{desempenho.entraram}</b> <span className="text-suave">entraram</span>
+                    </span>
+                    <span>
+                      <b className="text-limao">{desempenho.compraram}</b> <span className="text-suave">compraram ({pct(desempenho.compraram, desempenho.entraram)})</span>
+                    </span>
+                  </div>
+                  {desempenho.entraram === 0 ? (
+                    <span className="text-xs text-suave">Ainda não há conversas reais nesse período. (Os testes do simulador não contam.)</span>
+                  ) : maioresPerdas.length > 0 ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] text-suave">Onde mais perde gente:</span>
+                      {maioresPerdas.map((x) => (
+                        <button key={x.id} type="button" onClick={() => irParaBloco(x.id)} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs hover:bg-elevado">
+                          <span className="font-bold text-laranja">{x.perdidos}</span>
+                          <span className="truncate">
+                            {x.nome} <span className="text-suave">· {x.resumo}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {desempenho.cortado && <span className="text-[11px] text-laranja">Histórico muito grande: mostrando parte dele. Escolha um período menor.</span>}
+                  <span className="text-[11px] text-suave">Cada bloco mostra quantas pessoas passaram e quantas estão paradas nele agora. As setas mostram quantas seguiram por cada caminho.</span>
+                </>
+              )}
+            </div>
+          )}
+          <DesempenhoContext.Provider value={desempenhoVisivel}>
           <ReactFlow<NoBloco, Edge>
             nodes={nodesExibidos}
             edges={edgesColoridas}
@@ -409,6 +530,7 @@ function EditorInterno({ inicial, produtos, funis, onSalvar, simular }: Omit<Pro
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(n) => blocoDe((n as NoBloco).data.tipo).cor} maskColor="rgba(12,14,18,0.7)" className="!hidden md:!block" />
           </ReactFlow>
+          </DesempenhoContext.Provider>
         </div>
 
         {testando && simular && (
