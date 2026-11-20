@@ -43,5 +43,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Ignora arquivos estáticos, imagens e mídias públicas dos funis (o WhatsApp precisa baixar sem login)
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|mp3|ogg|opus|m4a|wav|mp4|pdf)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|mp3|ogg|opus|m4a|wav|mp4|pdf)$).*)"],
 };

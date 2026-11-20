@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type Aviso = { id: string; tipo: string; texto: string; link: string | null; lido: boolean; criado_em: string };
 
-const ICONE: Record<string, string> = { venda: "💰", humano: "🙋", chip: "📵", funil: "⚠️", info: "🔔", trafego: "📈" };
+const ICONE: Record<string, string> = { venda: "💰", humano: "🙋", chip: "📵", funil: "⚠️", info: "🔔", trafego: "📈", resumo: "📊" };
 
 function quando(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -128,6 +128,16 @@ export function Sininho() {
               </li>
             ))}
           </ul>
+          <button
+            type="button"
+            onClick={() => {
+              setAberto(false);
+              router.push("/notificacoes");
+            }}
+            className="border-t border-borda px-4 py-2.5 text-left text-xs text-limao hover:bg-elevado"
+          >
+            📲 Receber estes avisos no celular
+          </button>
         </div>
       )}
     </div>

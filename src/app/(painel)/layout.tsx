@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { RegistrarApp } from "@/components/RegistrarApp";
 import { Sidebar } from "@/components/Sidebar";
 import { supabaseConfigurado } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
@@ -17,6 +18,7 @@ async function SidebarComUsuario() {
 export default function PainelLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
+      <RegistrarApp />
       {supabaseConfigurado ? (
         <Suspense fallback={<Sidebar email={null} />}>
           <SidebarComUsuario />
