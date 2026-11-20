@@ -22,6 +22,7 @@ type DadosKanban = Pick<
   | "erro"
   | "aoVivo"
   | "atualizarContato"
+  | "removerContato"
 >;
 
 function Cartao({
@@ -316,6 +317,10 @@ export function KanbanView({ crm }: { crm: DadosKanban }) {
           campos={crm.campos}
           onAtualizar={(p) => void crm.atualizarContato(contatoAberto.id, p)}
           onFechar={() => setAberto(null)}
+          onExcluido={() => {
+            crm.removerContato(contatoAberto.id);
+            setAberto(null);
+          }}
         />
       )}
     </>

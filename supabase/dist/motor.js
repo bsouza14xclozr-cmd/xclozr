@@ -1615,6 +1615,36 @@ async function conferirPendentes(cfg) {
   }
   return pagos;
 }
+async function reiniciarFluxo(req) {
+  const donoId = await usuarioDoJwt(req);
+  if (!donoId) return json({ erro: "não autenticado" }, 401);
+  const corpo = await req.json().catch(() => ({}));
+  const { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("id", String(corpo.contato_id ?? "")).eq("dono_id", donoId).maybeSingle();
+  if (!linha) return json({ erro: "contato não encontrado" }, 404);
+  const contato = linhaParaContato(linha);
+  const store = criarStore(db, donoId);
+  const funil = corpo.funil_id ? await store.funil(String(corpo.funil_id)) : await funilPadraoDe(donoId, contato);
+  if (!funil) return json({ erro: "Nenhum funil ativo para reiniciar. Ative um funil ou escolha qual usar." }, 400);
+  if (!await travar(contato.id)) return json({ erro: "O robô está respondendo esse contato agora. Tente de novo em alguns segundos." }, 409);
+  try {
+    await db.from("pagamentos").update({ status: "expirado", verificar_em: null }).eq("contato_id", contato.id).eq("status", "pendente");
+    const cfg = await configMotor(db);
+    const ctx = ctxPara(donoId, contato.simulacao, cfg);
+    await ctx.store.cancelarAgendamentos(contato);
+    const reset = { funil_id: funil.id, aguardando: null, bloco_atual: null, finalizado: false, pix_ativo: null, robo_ativo: true };
+    Object.assign(contato, reset);
+    await ctx.store.atualizarContato(contato, reset);
+    if (corpo.agora === false) return json({ ok: true, iniciado: false });
+    try {
+      await iniciar(ctx, contato, funil);
+    } catch (e) {
+      return json({ ok: true, iniciado: false, aviso: `Fluxo reiniciado, mas não consegui mandar a primeira mensagem agora (${e.message}). Ele começa quando o cliente mandar mensagem.` });
+    }
+    return json({ ok: true, iniciado: true });
+  } finally {
+    await soltar(contato.id);
+  }
+}
 async function enviarManual(req) {
   const donoId = await usuarioDoJwt(req);
   if (!donoId) return json({ erro: "não autenticado" }, 401);
@@ -1852,6 +1882,7 @@ Deno.serve(async (req) => {
     if (rota === "/simular" && req.method === "POST") return await simular(req);
     if (rota === "/numeros" && req.method === "POST") return await numeros(req);
     if (rota === "/enviar" && req.method === "POST") return await enviarManual(req);
+    if (rota === "/reiniciar" && req.method === "POST") return await reiniciarFluxo(req);
     if (rota === "/ia" && req.method === "POST") return await rotaIA(req);
     if (rota === "/gateway" && req.method === "POST") return await gateway(req);
     const cfg = await configMotor(db);

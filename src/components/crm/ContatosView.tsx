@@ -7,7 +7,7 @@ import type { Crm } from "@/lib/crm/useCrm";
 import { AbasCrm, EtiquetaChip, inputCls } from "./comum";
 import { FichaContato } from "./FichaContato";
 
-type DadosContatos = Pick<Crm, "colunas" | "etiquetas" | "campos" | "contatos" | "carregando" | "erro" | "aoVivo" | "atualizarContato">;
+type DadosContatos = Pick<Crm, "colunas" | "etiquetas" | "campos" | "contatos" | "carregando" | "erro" | "aoVivo" | "atualizarContato" | "removerContato">;
 
 export function ContatosView({ crm }: { crm: DadosContatos }) {
   const [aberto, setAberto] = useState<string | null>(null);
@@ -152,6 +152,10 @@ export function ContatosView({ crm }: { crm: DadosContatos }) {
           campos={crm.campos}
           onAtualizar={(p) => void crm.atualizarContato(contatoAberto.id, p)}
           onFechar={() => setAberto(null)}
+          onExcluido={() => {
+            crm.removerContato(contatoAberto.id);
+            setAberto(null);
+          }}
         />
       )}
     </>

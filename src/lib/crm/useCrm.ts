@@ -112,6 +112,8 @@ export function useCrm() {
     if (error) setErro("Não consegui salvar a alteração do contato.");
   }, []);
 
+  const removerContato = useCallback((id: string) => setContatos((cs) => cs.filter((c) => c.id !== id)), []);
+
   /* ---------- colunas ---------- */
   const salvarColuna = useCallback(
     async (c: Partial<Coluna> & { nome: string }, id?: string) => {
@@ -202,6 +204,7 @@ export function useCrm() {
     erro,
     aoVivo,
     atualizarContato,
+    removerContato,
     salvarColuna,
     apagarColuna,
     reordenarColunas,

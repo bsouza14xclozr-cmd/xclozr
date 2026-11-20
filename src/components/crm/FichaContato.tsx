@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { brl } from "@/lib/dinheiro";
 import { formatarTelefone, nomeContato, tempoRelativo, type CampoPersonalizado, type Coluna, type Contato, type Etiqueta, type PatchContato } from "@/lib/crm/tipos";
+import { AcoesContato } from "./AcoesContato";
 import { EtiquetaChip, areaCls, inputCls } from "./comum";
 
 /** Ficha lateral do contato: informações, etiquetas, campos, coluna e notas. Salva sozinha. */
@@ -13,6 +14,7 @@ export function FichaContato({
   campos,
   onAtualizar,
   onFechar,
+  onExcluido,
 }: {
   contato: Contato;
   colunas: Coluna[];
@@ -20,6 +22,7 @@ export function FichaContato({
   campos: CampoPersonalizado[];
   onAtualizar: (patch: PatchContato) => void;
   onFechar: () => void;
+  onExcluido?: () => void;
 }) {
   const [nome, setNome] = useState(contato.nome ?? "");
   const [notas, setNotas] = useState(contato.notas ?? "");
@@ -173,6 +176,10 @@ export function FichaContato({
             Notas
           </label>
           <textarea id="ficha-notas" rows={4} className={areaCls} placeholder="Anotações sobre este cliente…" value={notas} onChange={(e) => setNotas(e.target.value)} />
+        </div>
+
+        <div className="border-t border-borda pt-4">
+          <AcoesContato contatoId={contato.id} nome={nomeContato(contato)} onExcluido={onExcluido ?? onFechar} />
         </div>
       </div>
     </aside>

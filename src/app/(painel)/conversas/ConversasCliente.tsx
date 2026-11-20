@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AcoesContato } from "@/components/crm/AcoesContato";
 import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui";
 
@@ -83,6 +84,7 @@ export function ConversasCliente() {
   const [pausar, setPausar] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [mostrarAcoes, setMostrarAcoes] = useState(false);
   const fimRef = useRef<HTMLDivElement>(null);
   const selRef = useRef<string | null>(null);
 
@@ -286,11 +288,42 @@ export function ConversasCliente() {
                     <span className={`h-2 w-2 rounded-full ${atual.robo_ativo ? "bg-limao" : "bg-laranja"}`} />
                     {atual.robo_ativo ? "Robô atendendo" : "Robô pausado"}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setMostrarAcoes((v) => !v)}
+                    aria-expanded={mostrarAcoes}
+                    className="min-h-9 rounded-lg border border-borda px-3 text-xs text-suave hover:bg-elevado hover:text-texto"
+                  >
+                    ⋯ Ações
+                  </button>
                   <Link href="/crm/contatos" className="min-h-9 rounded-lg px-2 py-2 text-xs text-suave hover:text-texto">
                     CRM
                   </Link>
                 </div>
               </header>
+              {mostrarAcoes && (
+                <div className="border-b border-borda bg-lateral px-4 py-3">
+                  <AcoesContato
+                    key={atual.id}
+                    compacto
+                    contatoId={atual.id}
+                    nome={atual.nome || formatarTel(atual.telefone)}
+                    onConversaApagada={() => {
+                      setMensagens([]);
+                      setUltimas((u) => {
+                        const n = { ...u };
+                        delete n[atual.id];
+                        return n;
+                      });
+                    }}
+                    onExcluido={() => {
+                      setContatos((cs) => cs?.filter((c) => c.id !== atual.id) ?? cs);
+                      setSelecionado(null);
+                      setMostrarAcoes(false);
+                    }}
+                  />
+                </div>
+              )}
 
               <div className="min-h-0 flex-1 overflow-y-auto bg-fundo/40 px-4 py-4">
                 <div className="flex flex-col gap-2">
