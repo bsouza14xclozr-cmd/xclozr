@@ -613,8 +613,17 @@ export function AnunciosCliente() {
                             {l.nome}
                           </button>
                         ) : (
-                          <span className="block truncate font-medium" title={l.nome}>
-                            {l.nome}
+                          <span className="flex items-center gap-2">
+                            <span className="block truncate font-medium" title={l.nome}>
+                              {l.nome}
+                            </span>
+                            <a
+                              href={`/disparos?anuncio=${encodeURIComponent(l.id)}`}
+                              className="shrink-0 rounded-md border border-borda px-1.5 py-0.5 text-[11px] text-suave hover:border-limao/50 hover:text-limao"
+                              title="Montar um disparo para quem veio deste anúncio e não comprou"
+                            >
+                              📣 Recuperar
+                            </a>
                           </span>
                         )}
                         {l.status_efetivo && l.status_efetivo !== l.status && l.status_efetivo !== "ACTIVE" && (

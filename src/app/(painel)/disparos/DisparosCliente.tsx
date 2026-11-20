@@ -15,6 +15,7 @@ type Filtro = {
   conversou_dias?: number;
   parado_horas?: number;
   incluir_pausados?: boolean;
+  anuncios?: string[];
 };
 type TipoMidia = "imagem" | "video" | "audio" | "arquivo";
 type Campanha = {
@@ -106,6 +107,8 @@ function Editor({
   colunas,
   etiquetas,
   funis,
+  anuncios,
+  porAnuncio,
   onFechar,
   onSalvo,
 }: {
@@ -113,6 +116,8 @@ function Editor({
   colunas: Opcao[];
   etiquetas: Opcao[];
   funis: Opcao[];
+  anuncios: Opcao[];
+  porAnuncio: boolean | null;
   onFechar: () => void;
   onSalvo: () => void;
 }) {
@@ -247,6 +252,14 @@ function Editor({
             <Chips opcoes={colunas} valor={f.colunas ?? []} onChange={(v) => setF({ colunas: v })} />
           </div>
           <div className="flex flex-col gap-2 text-[13px] text-suave">
+            Veio do anúncio <span className="text-[11px]">(nenhum marcado = qualquer origem)</span>
+            {porAnuncio === false ? (
+              <span className="text-xs text-laranja">Filtro por anúncio ainda sendo ativado no servidor.</span>
+            ) : (
+              <Chips opcoes={anuncios} valor={f.anuncios ?? []} onChange={(v) => setF({ anuncios: v })} />
+            )}
+          </div>
+          <div className="flex flex-col gap-2 text-[13px] text-suave">
             Com a etiqueta
             <Chips opcoes={etiquetas} valor={f.etiquetas ?? []} onChange={(v) => setF({ etiquetas: v })} />
           </div>
@@ -361,6 +374,8 @@ export function DisparosCliente() {
   const [colunas, setColunas] = useState<Opcao[]>([]);
   const [etiquetas, setEtiquetas] = useState<Opcao[]>([]);
   const [funis, setFunis] = useState<Opcao[]>([]);
+  const [anuncios, setAnuncios] = useState<Opcao[]>([]);
+  const [porAnuncio, setPorAnuncio] = useState<boolean | null>(null);
   const [editando, setEditando] = useState<(typeof NOVA & { id?: string }) | null>(null);
   const [chips, setChips] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -398,6 +413,30 @@ export function DisparosCliente() {
       setFunis((f.data ?? []) as Opcao[]);
       setChips(n.count ?? 0);
     });
+    // anúncios que já trouxeram contatos (para o remarketing por anúncio)
+    void (async () => {
+      const r = await supabase.rpc("disparos_recursos");
+      const ok = !r.error && Boolean((r.data as { anuncios?: boolean } | null)?.anuncios);
+      setPorAnuncio(ok);
+      const { data: cts } = await supabase.from("contatos").select("meta_ad_id").eq("simulacao", false).not("meta_ad_id", "is", null).limit(5000);
+      const ids = [...new Set(((cts ?? []) as { meta_ad_id: string }[]).map((x) => x.meta_ad_id))];
+      if (!ids.length) return;
+      const { data: ads } = await supabase.from("meta_anuncios").select("id, nome").in("id", ids.slice(0, 300));
+      const nomes = new Map(((ads ?? []) as Opcao[]).map((a) => [a.id, a.nome]));
+      const lista = ids.map((id) => ({ id, nome: nomes.get(id) ?? `Anúncio ${id.slice(-6)}` }));
+      setAnuncios(lista.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")));
+      // veio do relatório de anúncios: abre um disparo pronto para quem veio desse anúncio e não comprou
+      const alvo = new URLSearchParams(window.location.search).get("anuncio");
+      if (alvo && ok) {
+        const nome = nomes.get(alvo) ?? "anúncio";
+        setEditando({
+          ...NOVA,
+          nome: `Recuperar: ${nome}`.slice(0, 80),
+          filtro: { ...NOVA.filtro, anuncios: [alvo], comprou: "nao", conversou_dias: 7, parado_horas: 6 },
+        });
+        window.history.replaceState(null, "", "/disparos");
+      }
+    })();
     const canal = supabase
       .channel("campanhas")
       .on("postgres_changes", { event: "*", schema: "public", table: "campanhas" }, () => void carregar())
@@ -453,6 +492,8 @@ export function DisparosCliente() {
           colunas={colunas}
           etiquetas={etiquetas}
           funis={funis}
+          anuncios={anuncios}
+          porAnuncio={porAnuncio}
           onFechar={() => setEditando(null)}
           onSalvo={() => {
             setEditando(null);
