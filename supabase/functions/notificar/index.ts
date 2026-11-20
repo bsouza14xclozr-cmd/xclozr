@@ -18,7 +18,7 @@ const CORS = {
 const json = (d: unknown, status = 200) => new Response(JSON.stringify(d), { status, headers: { ...CORS, "content-type": "application/json" } });
 
 const TITULO: Record<string, string> = {
-  venda: "💰 Venda confirmada",
+  venda: "Venda aprovada!",
   chip: "📵 Chip desconectado",
   humano: "🙋 Cliente chamando você",
   funil: "⚠️ Problema no funil",
@@ -88,7 +88,7 @@ async function enviarPendentes() {
   const desde = new Date(Date.now() - 2 * 3600_000).toISOString(); // aviso velho não vira notificação
   const { data: avisos } = await db
     .from("avisos")
-    .select("id, dono_id, tipo, texto, link")
+    .select("id, dono_id, tipo, texto, link, push_titulo, push_corpo")
     .is("push_em", null)
     .gte("criado_em", desde)
     .order("criado_em")
@@ -103,7 +103,12 @@ async function enviarPendentes() {
     if (!ids.has(a.id)) continue;
     const p = prefs.get(a.dono_id);
     if (p && (!p.ativo || !(p.tipos ?? TIPOS_PADRAO).includes(a.tipo))) continue;
-    enviados += await paraDono(a.dono_id, { titulo: TITULO[a.tipo] ?? TITULO.info, corpo: a.texto, link: a.link, tag: a.tipo === "chip" ? "chip" : a.id });
+    enviados += await paraDono(a.dono_id, {
+      titulo: a.push_titulo || TITULO[a.tipo] || TITULO.info,
+      corpo: a.push_corpo || a.texto,
+      link: a.link,
+      tag: a.tipo === "chip" ? "chip" : a.id,
+    });
   }
   return enviados;
 }

@@ -90,7 +90,7 @@ var CORS = {
 };
 var json = (d, status = 200) => new Response(JSON.stringify(d), { status, headers: { ...CORS, "content-type": "application/json" } });
 var TITULO = {
-  venda: "💰 Venda confirmada",
+  venda: "Venda aprovada!",
   chip: "📵 Chip desconectado",
   humano: "🙋 Cliente chamando você",
   funil: "⚠️ Problema no funil",
@@ -148,7 +148,7 @@ async function paraDono(donoId, dados) {
 }
 async function enviarPendentes() {
   const desde = new Date(Date.now() - 2 * 36e5).toISOString();
-  const { data: avisos } = await db.from("avisos").select("id, dono_id, tipo, texto, link").is("push_em", null).gte("criado_em", desde).order("criado_em").limit(100);
+  const { data: avisos } = await db.from("avisos").select("id, dono_id, tipo, texto, link, push_titulo, push_corpo").is("push_em", null).gte("criado_em", desde).order("criado_em").limit(100);
   if (!avisos?.length) return 0;
   const { data: pegos } = await db.from("avisos").update({ push_em: (/* @__PURE__ */ new Date()).toISOString() }).in("id", avisos.map((a) => a.id)).is("push_em", null).select("id");
   const ids = new Set((pegos ?? []).map((p) => p.id));
@@ -158,7 +158,12 @@ async function enviarPendentes() {
     if (!ids.has(a.id)) continue;
     const p = prefs.get(a.dono_id);
     if (p && (!p.ativo || !(p.tipos ?? TIPOS_PADRAO).includes(a.tipo))) continue;
-    enviados += await paraDono(a.dono_id, { titulo: TITULO[a.tipo] ?? TITULO.info, corpo: a.texto, link: a.link, tag: a.tipo === "chip" ? "chip" : a.id });
+    enviados += await paraDono(a.dono_id, {
+      titulo: a.push_titulo || TITULO[a.tipo] || TITULO.info,
+      corpo: a.push_corpo || a.texto,
+      link: a.link,
+      tag: a.tipo === "chip" ? "chip" : a.id
+    });
   }
   return enviados;
 }
