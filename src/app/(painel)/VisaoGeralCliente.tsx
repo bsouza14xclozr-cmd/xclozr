@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, EmptyState, PageHeader, Stat } from "@/components/ui";
 import { brl } from "@/lib/dinheiro";
+import { AoVivo } from "./AoVivo";
 
 type Dia = { dia: string; faturamento: number; gasto: number };
 type Anuncio = { nome: string; faturamento: number; gasto: number; vendas: number; contatos: number; lucro: number };
@@ -170,6 +171,8 @@ export function VisaoGeralCliente() {
           </div>
         }
       />
+
+      <AoVivo />
 
       {erro && <p className="text-sm text-vermelho">{erro}</p>}
 

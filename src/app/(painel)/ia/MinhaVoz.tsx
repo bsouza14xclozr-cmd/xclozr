@@ -1,6 +1,7 @@
 "use client";
 
 // "Minha voz": grava ~1 minuto falando livremente (ou envia um áudio) e clona a voz para os áudios do robô.
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -314,6 +315,47 @@ export function MinhaVoz() {
       )}
 
       {msg && <p className={`text-sm ${msg.ok ? "text-limao" : "text-vermelho"}`}>{msg.texto}</p>}
+
+      <details className="rounded-xl border border-borda bg-fundo p-4" open={!status.voz_pronta ? undefined : true}>
+        <summary className="cursor-pointer text-sm font-semibold">📘 Como usar sua voz (passo a passo)</summary>
+        <div className="mt-3 flex flex-col gap-4 text-sm">
+          <div className="flex flex-col gap-1">
+            <b>1. Ouvir como ficou (30 segundos)</b>
+            <ol className="flex list-decimal flex-col gap-0.5 pl-5 text-suave">
+              <li>Em “Ouvir como fica”, escreva uma frase do jeito que você fala com cliente.</li>
+              <li>Toque em ▶ Ouvir com minha voz.</li>
+              <li>Não gostou? Toque em “Gravar de novo”: fale com mais naturalidade, em lugar silencioso, por 1 minuto inteiro. A voz nova substitui a antiga.</li>
+            </ol>
+          </div>
+          <div className="flex flex-col gap-1">
+            <b>2. Colocar no funil</b>
+            <ol className="flex list-decimal flex-col gap-0.5 pl-5 text-suave">
+              <li>
+                Abra um funil em <Link href="/funil" className="text-limao hover:underline">Funis de venda</Link> e clique no bloco Mensagem de boas-vindas.
+              </li>
+              <li>Clique em + Espera (3 segundos, com “gravando áudio…” marcado) e depois em + 🎙️ Áudio com minha voz.</li>
+              <li>
+                Escreva, por exemplo: <i className="text-texto">“Oi {"{nome}"}! Que bom que você chamou, vou te mostrar tudo, tá?”</i>
+              </li>
+              <li>Use ↑ ↓ para deixar a Espera e o áudio onde quiser.</li>
+              <li>Clique em ▶ Testar funil, mande “oi” e responda o nome: o áudio aparece com player para você ouvir.</li>
+            </ol>
+          </div>
+          <div className="flex flex-col gap-1">
+            <b>3. Testar de verdade no WhatsApp</b>
+            <ol className="flex list-decimal flex-col gap-0.5 pl-5 text-suave">
+              <li>Deixe o funil ativo e mande “oi” para o número do robô de outro celular.</li>
+              <li>Você vê “gravando áudio…” e chega o áudio com a sua voz, como se fosse gravado na hora.</li>
+            </ol>
+          </div>
+          <ul className="flex flex-col gap-0.5 text-xs text-suave">
+            <li>• O primeiro áudio de cada texto leva alguns segundos para ser gerado; textos repetidos saem na hora (o áudio é reaproveitado).</li>
+            <li>• Com {"{nome}"} cada cliente recebe um áudio com o nome dele (gasta um pouco de crédito por cliente).</li>
+            <li>• Se a ElevenLabs falhar (créditos acabaram, chave errada), o robô manda o mesmo texto escrito: a conversa nunca trava.</li>
+            <li>• Dica: áudio curto (até 20 segundos) converte mais e gasta menos crédito.</li>
+          </ul>
+        </div>
+      </details>
     </section>
   );
 }
