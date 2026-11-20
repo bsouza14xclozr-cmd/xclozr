@@ -27,8 +27,8 @@ type Estado = {
 
 const RECUPERADO_MIN = 15; // pago depois dos lembretes = venda recuperada pelo follow-up
 
-function inicioHoje() {
-  const agora = new Date(Date.now() - 3 * 3600_000);
+function inicioHoje(ms: number) {
+  const agora = new Date(ms - 3 * 3600_000);
   return new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate(), 3));
 }
 function ha(iso: string | null, agora: number) {
@@ -47,11 +47,11 @@ const recuperada = (v: Venda) => v.pago_em && (new Date(v.pago_em).getTime() - n
 
 export function AoVivo() {
   const [e, setE] = useState<Estado | null>(null);
-  const [agora, setAgora] = useState(() => Date.now());
+  const [agora, setAgora] = useState(0); // 0 até montar no navegador (o servidor não usa a hora)
 
   const carregar = useCallback(async () => {
     const supabase = createClient();
-    const hoje = inicioHoje().toISOString();
+    const hoje = inicioHoje(Date.now()).toISOString();
     const [nums, ult, ativas, convs, pags] = await Promise.all([
       supabase.from("numeros").select("id, nome, status"),
       supabase.from("mensagens").select("criado_em").eq("autor", "cliente").order("criado_em", { ascending: false }).limit(1).maybeSingle(),
@@ -83,7 +83,8 @@ export function AoVivo() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- carrega ao abrir
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marca a hora e carrega ao abrir
+    setAgora(Date.now());
     void carregar();
     const supabase = createClient();
     const canal = supabase
@@ -103,7 +104,7 @@ export function AoVivo() {
   const vendas = e?.vendas ?? [];
   const principais = vendas.filter((v) => v.tipo !== "upsell");
   const fat = vendas.reduce((t, v) => t + v.valor_centavos, 0);
-  const horas = Math.max(1, (agora - inicioHoje().getTime()) / 3600_000);
+  const horas = agora ? Math.max(1, (agora - inicioHoje(agora).getTime()) / 3600_000) : 1;
   const recuperadas = vendas.filter(recuperada);
   const fatRecuperado = recuperadas.reduce((t, v) => t + v.valor_centavos, 0);
   const conversao = e && e.conversasHoje > 0 ? (principais.length / e.conversasHoje) * 100 : 0;
