@@ -989,6 +989,28 @@ function criarStore(db2, donoId) {
 // supabase/functions/motor/envio.ts
 var envioSimulado = { enviar: async () => {
 } };
+var MIMES = {
+  pdf: "application/pdf",
+  zip: "application/zip",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  epub: "application/epub+zip",
+  txt: "text/plain"
+};
+function extensaoDe(url) {
+  const m = decodeURIComponent((url ?? "").split("?")[0]).match(/\.([a-z0-9]{2,5})$/i);
+  return m ? m[1].toLowerCase() : "";
+}
+function mimeDe(url) {
+  return MIMES[extensaoDe(url)] ?? void 0;
+}
+function nomeComExtensao(nome, url) {
+  const ext = extensaoDe(url);
+  const base2 = (nome || "arquivo").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "arquivo";
+  return ext && !base2.toLowerCase().endsWith(`.${ext}`) ? `${base2}.${ext}` : base2;
+}
 async function configMotor(db2) {
   const { data } = await db2.from("motor_config").select("chave, valor");
   return Object.fromEntries((data ?? []).map((l) => [l.chave, l.valor]));
@@ -1018,7 +1040,8 @@ function criarEnvioEvolution(db2, cfg) {
           mediatype: s.tipo === "arquivo" ? "document" : s.tipo,
           media: s.url,
           caption: "legenda" in s ? s.legenda : void 0,
-          fileName: s.tipo === "arquivo" ? s.nome : void 0,
+          fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : void 0,
+          mimetype: s.tipo === "arquivo" ? mimeDe(s.url) : void 0,
           delay
         };
       }

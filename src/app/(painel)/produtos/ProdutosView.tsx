@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Card, EmptyState } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
+import { ArquivoProduto } from "./ArquivoProduto";
 import { ConexaoAsaas, ConexaoLivePix, ConexaoPagBank } from "./ConexaoGateway";
 
 export type EntregaTipo = "link" | "arquivo" | "codigo";
@@ -42,7 +43,7 @@ export const GATEWAYS: { valor: Gateway; nome: string }[] = [
 
 const ENTREGAS: { valor: EntregaTipo; nome: string; rotulo: string; placeholder: string }[] = [
   { valor: "link", nome: "Link de acesso", rotulo: "Link enviado ao cliente", placeholder: "https://…" },
-  { valor: "arquivo", nome: "Arquivo", rotulo: "Link do arquivo (PDF, etc.)", placeholder: "https://…/arquivo.pdf" },
+  { valor: "arquivo", nome: "Arquivo (PDF)", rotulo: "Arquivo enviado no WhatsApp", placeholder: "https://…/arquivo.pdf" },
   { valor: "codigo", nome: "Código / login", rotulo: "Código ou dados de acesso", placeholder: "Ex.: usuário e senha, cupom, chave…" },
 ];
 
@@ -281,7 +282,9 @@ function FormProduto({
           <label htmlFor="p-entrega" className="text-[13px] text-suave">
             {entrega.rotulo}
           </label>
-          {p.entrega_tipo === "codigo" ? (
+          {p.entrega_tipo === "arquivo" ? (
+            <ArquivoProduto url={p.entrega_conteudo ?? ""} onChange={(url) => setP({ ...p, entrega_conteudo: url })} inputCls={inputCls} />
+          ) : p.entrega_tipo === "codigo" ? (
             <textarea id="p-entrega" rows={3} className={areaCls} value={p.entrega_conteudo ?? ""} onChange={(e) => setP({ ...p, entrega_conteudo: e.target.value })} placeholder={entrega.placeholder} />
           ) : (
             <input id="p-entrega" className={inputCls} value={p.entrega_conteudo ?? ""} onChange={(e) => setP({ ...p, entrega_conteudo: e.target.value })} placeholder={entrega.placeholder} />

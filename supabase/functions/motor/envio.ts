@@ -5,6 +5,30 @@ import type { Contato, Envio, Saida } from "./motor.ts";
 /** No simulador nada vai para o WhatsApp: as mensagens ficam só no banco. */
 export const envioSimulado: Envio = { enviar: async () => {} };
 
+const MIMES: Record<string, string> = {
+  pdf: "application/pdf",
+  zip: "application/zip",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  epub: "application/epub+zip",
+  txt: "text/plain",
+};
+function extensaoDe(url: string) {
+  const m = decodeURIComponent((url ?? "").split("?")[0]).match(/\.([a-z0-9]{2,5})$/i);
+  return m ? m[1].toLowerCase() : "";
+}
+function mimeDe(url: string) {
+  return MIMES[extensaoDe(url)] ?? undefined;
+}
+/** "Receitas de Geladinho" + ".../apostila.pdf" → "Receitas de Geladinho.pdf" (o WhatsApp precisa da extensão para abrir). */
+export function nomeComExtensao(nome: string, url: string) {
+  const ext = extensaoDe(url);
+  const base = (nome || "arquivo").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "arquivo";
+  return ext && !base.toLowerCase().endsWith(`.${ext}`) ? `${base}.${ext}` : base;
+}
+
 export async function configMotor(db: SupabaseClient) {
   const { data } = await db.from("motor_config").select("chave, valor");
   return Object.fromEntries((data ?? []).map((l: { chave: string; valor: string }) => [l.chave, l.valor])) as Record<string, string>;
@@ -37,7 +61,8 @@ export function criarEnvioEvolution(db: SupabaseClient, cfg: Record<string, stri
           mediatype: s.tipo === "arquivo" ? "document" : s.tipo,
           media: s.url,
           caption: "legenda" in s ? s.legenda : undefined,
-          fileName: s.tipo === "arquivo" ? s.nome : undefined,
+          fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : undefined,
+          mimetype: s.tipo === "arquivo" ? mimeDe(s.url) : undefined,
           delay,
         };
       }
