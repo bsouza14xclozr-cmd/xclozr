@@ -1011,6 +1011,62 @@ function nomeComExtensao(nome, url) {
   const base2 = (nome || "arquivo").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "arquivo";
   return ext && !base2.toLowerCase().endsWith(`.${ext}`) ? `${base2}.${ext}` : base2;
 }
+var MAX_DELAY_TEXTO = 22e3;
+var MAX_DELAY_AUDIO = 3e4;
+var ORCAMENTO_MS = 11e4;
+var duracoes = /* @__PURE__ */ new Map();
+var BITRATES_V1_L3 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+var BITRATES_V2_L3 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+function bitrateMp3(b) {
+  let i = 0;
+  if (b[0] === 73 && b[1] === 68 && b[2] === 51) {
+    i = 10 + ((b[6] & 127) << 21 | (b[7] & 127) << 14 | (b[8] & 127) << 7 | b[9] & 127);
+  }
+  for (; i + 3 < b.length; i++) {
+    if (b[i] !== 255 || (b[i + 1] & 224) !== 224) continue;
+    const versao = b[i + 1] >> 3 & 3;
+    const camada = b[i + 1] >> 1 & 3;
+    const idx = b[i + 2] >> 4 & 15;
+    if (camada !== 1 || idx === 0 || idx === 15 || versao === 1) continue;
+    return (versao === 3 ? BITRATES_V1_L3 : BITRATES_V2_L3)[idx] || null;
+  }
+  return null;
+}
+async function duracaoAudio(url) {
+  if (duracoes.has(url)) return duracoes.get(url);
+  let seg = null;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4e3);
+    const r = await fetch(url, { headers: { range: "bytes=0-16383" }, signal: ctrl.signal });
+    clearTimeout(t);
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const total = Number((r.headers.get("content-range") ?? "").split("/")[1]) || Number(r.headers.get("content-length")) || buf.length;
+    const ehMp3 = /\.mp3(\?|$)/i.test(url) || (r.headers.get("content-type") ?? "").includes("mpeg") || bitrateMp3(buf) !== null;
+    const kbps = ehMp3 ? bitrateMp3(buf) ?? 128 : 32;
+    if (total > 0) seg = total * 8 / (kbps * 1e3);
+  } catch {
+    seg = null;
+  }
+  duracoes.set(url, seg);
+  return seg;
+}
+function variar(ms) {
+  return Math.round(ms * (0.9 + Math.random() * 0.2));
+}
+async function tempoHumano(s) {
+  if (s.tipo === "texto") {
+    const n = s.texto.length;
+    return Math.min(MAX_DELAY_TEXTO, variar(1800 + n * 55));
+  }
+  if (s.tipo === "audio") {
+    const d = await duracaoAudio(s.url);
+    if (!d) return 6e3;
+    return Math.min(MAX_DELAY_AUDIO, Math.max(3e3, variar(d * 1e3 + 800)));
+  }
+  if (s.tipo === "arquivo") return variar(3500);
+  return variar(2500 + ("legenda" in s ? Math.min(6e3, (s.legenda ?? "").length * 40) : 0));
+}
 async function configMotor(db2) {
   const { data } = await db2.from("motor_config").select("chave, valor");
   return Object.fromEntries((data ?? []).map((l) => [l.chave, l.valor]));
@@ -1018,13 +1074,17 @@ async function configMotor(db2) {
 function criarEnvioEvolution(db2, cfg) {
   const base2 = (cfg.evolution_url ?? "").replace(/\/+$/, "");
   const apikey = cfg.evolution_apikey ?? "";
+  let gasto = 0;
   return {
     async enviar(c, s) {
       if (!base2 || !apikey) throw new Error("Evolution não configurada");
       const { data: numero } = await db2.from("numeros").select("instancia").eq("id", c.numero_id ?? "").maybeSingle();
       if (!numero) throw new Error("contato sem número (chip) associado");
       const inst = encodeURIComponent(numero.instancia);
-      const delay = Math.min(Math.max(s.esperaMs, 0), 25e3);
+      const configurado = Math.max(s.esperaMs, 0);
+      const humano = gasto < ORCAMENTO_MS ? await tempoHumano(s) : 0;
+      const delay = Math.min(Math.max(configurado, humano), s.tipo === "audio" ? MAX_DELAY_AUDIO : 25e3);
+      gasto += delay;
       let rota;
       let corpo;
       if (s.tipo === "texto") {
@@ -1540,7 +1600,7 @@ function json(dados, status = 200) {
 }
 async function travar(id) {
   const agora = /* @__PURE__ */ new Date();
-  const { data } = await db.from("contatos").update({ processando_ate: new Date(agora.getTime() + 45e3).toISOString() }).eq("id", id).or(`processando_ate.is.null,processando_ate.lt.${agora.toISOString()}`).select("id");
+  const { data } = await db.from("contatos").update({ processando_ate: new Date(agora.getTime() + 18e4).toISOString() }).eq("id", id).or(`processando_ate.is.null,processando_ate.lt.${agora.toISOString()}`).select("id");
   return Boolean(data?.length);
 }
 async function soltar(id) {
@@ -1944,30 +2004,42 @@ async function evolution(req, cfg) {
     await ctx.store.agendar(contato, "reprocessar", new Date(Date.now() + 3e3), { texto });
     return json({ ok: true, enfileirado: true });
   }
-  try {
-    const atual = await carregarContato(contato.id);
-    await receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto);
-  } catch (e) {
-    console.error("erro ao processar mensagem", e);
-  } finally {
-    await soltar(contato.id);
-  }
+  const processar = (async () => {
+    try {
+      const atual = await carregarContato(contato.id);
+      await receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto);
+    } catch (e) {
+      console.error("erro ao processar mensagem", e);
+    } finally {
+      await soltar(contato.id);
+    }
+  })();
+  if (emSegundoPlano(processar)) return json({ ok: true, segundo_plano: true });
+  await processar;
   return json({ ok: true });
+}
+function emSegundoPlano(p) {
+  const rt = globalThis.EdgeRuntime;
+  if (rt?.waitUntil) {
+    rt.waitUntil(p);
+    return true;
+  }
+  return false;
 }
 async function relogio(req, cfg) {
   if (!cfg.segredo_relogio || req.headers.get("x-segredo") !== cfg.segredo_relogio) return json({ erro: "segredo inválido" }, 401);
   const { data: vencidos } = await db.from("agendamentos").select("id, dono_id, contato_id, tipo, dados").eq("feito", false).lte("executar_em", (/* @__PURE__ */ new Date()).toISOString()).order("executar_em").limit(40);
   let feitos = 0;
-  for (const a of vencidos ?? []) {
+  await Promise.all((vencidos ?? []).map(async (a) => {
     const { data: pegou } = await db.from("agendamentos").update({ feito: true }).eq("id", a.id).eq("feito", false).select("id");
-    if (!pegou?.length) continue;
+    if (!pegou?.length) return;
     if (!await travar(a.contato_id)) {
       await db.from("agendamentos").update({ feito: false, executar_em: new Date(Date.now() + 3e3).toISOString() }).eq("id", a.id);
-      continue;
+      return;
     }
     try {
       const contato = await carregarContato(a.contato_id);
-      if (!contato) continue;
+      if (!contato) return;
       const ctx = ctxPara(a.dono_id, contato.simulacao, cfg);
       if (a.tipo === "pix_pago") {
         await pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
@@ -1982,7 +2054,7 @@ async function relogio(req, cfg) {
     } finally {
       await soltar(a.contato_id);
     }
-  }
+  }));
   let disparos = 0;
   try {
     disparos = await processarDisparos(db, cfg);

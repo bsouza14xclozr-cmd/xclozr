@@ -36,7 +36,7 @@ async function travar(id: string) {
   const agora = new Date();
   const { data } = await db
     .from("contatos")
-    .update({ processando_ate: new Date(agora.getTime() + 45_000).toISOString() })
+    .update({ processando_ate: new Date(agora.getTime() + 180_000).toISOString() })
     .eq("id", id)
     .or(`processando_ate.is.null,processando_ate.lt.${agora.toISOString()}`)
     .select("id");
@@ -561,15 +561,30 @@ async function evolution(req: Request, cfg: Record<string, string>) {
     await ctx.store.agendar(contato, "reprocessar", new Date(Date.now() + 3000), { texto });
     return json({ ok: true, enfileirado: true });
   }
-  try {
-    const atual = (await carregarContato(contato.id))!;
-    await M.receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto);
-  } catch (e) {
-    console.error("erro ao processar mensagem", e);
-  } finally {
-    await soltar(contato.id);
-  }
+  const processar = (async () => {
+    try {
+      const atual = (await carregarContato(contato.id))!;
+      await M.receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto);
+    } catch (e) {
+      console.error("erro ao processar mensagem", e);
+    } finally {
+      await soltar(contato.id);
+    }
+  })();
+  // responde a Evolution na hora (o robô "digita" com calma em segundo plano, sem a Evolution reenviar o evento)
+  if (emSegundoPlano(processar)) return json({ ok: true, segundo_plano: true });
+  await processar;
   return json({ ok: true });
+}
+
+function emSegundoPlano(p: Promise<unknown>) {
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) {
+    rt.waitUntil(p);
+    return true;
+  }
+  return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -586,17 +601,18 @@ async function relogio(req: Request, cfg: Record<string, string>) {
     .limit(40);
 
   let feitos = 0;
-  for (const a of vencidos ?? []) {
+  // cada contato em paralelo: com o ritmo humano, um cliente não pode atrasar os outros
+  await Promise.all((vencidos ?? []).map(async (a) => {
     // "reivindica" a tarefa (se duas execuções do relógio se cruzarem, só uma pega)
     const { data: pegou } = await db.from("agendamentos").update({ feito: true }).eq("id", a.id).eq("feito", false).select("id");
-    if (!pegou?.length) continue;
+    if (!pegou?.length) return;
     if (!(await travar(a.contato_id))) {
       await db.from("agendamentos").update({ feito: false, executar_em: new Date(Date.now() + 3000).toISOString() }).eq("id", a.id);
-      continue;
+      return;
     }
     try {
       const contato = await carregarContato(a.contato_id);
-      if (!contato) continue;
+      if (!contato) return;
       const ctx = ctxPara(a.dono_id, contato.simulacao, cfg);
       if (a.tipo === "pix_pago") {
         await M.pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
@@ -611,7 +627,7 @@ async function relogio(req: Request, cfg: Record<string, string>) {
     } finally {
       await soltar(a.contato_id);
     }
-  }
+  }));
   let disparos = 0;
   try {
     disparos = await processarDisparos(db, cfg);
