@@ -17,11 +17,26 @@ function negou(texto) {
   const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ")} `;
   return / (nao|naum|naon|nao quero|n|nem|nunca|jamais|dispenso|sem interesse) /.test(t);
 }
+function querInformacao(texto) {
+  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s?]/gu, " ").replace(/\s+/g, " ")} `;
+  return /\?/.test(t) || / (quero|queria|gostaria de|preciso) (saber|entender|ver|conhecer|mais informac|informac|detalhes)/.test(t) || / (como funciona|o que vem|o que e|mais info|me explica|explica melhor) /.test(t);
+}
+function ehReacao(texto) {
+  const t = normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  return /^(amem|amen|amem amem|gloria( a deus)?|aleluia|deus (e bom|abencoe|te abencoe)|obrigad[oa]|obg|valeu|vlw|isso|isso mesmo|show|top|legal|entendi|ah ta|ata|blz|beleza|massa|perfeito|otimo|ok ok|kk+|haha+|rs+|hum+|hmm+)( [a-z]+)?$/.test(t);
+}
 function brl(centavos) {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 function primeiroNome(n) {
-  return (n ?? "").trim().split(/\s+/)[0] ?? "";
+  const bruto = (n ?? "").trim();
+  if (!bruto) return "";
+  const p = bruto.split(/\s+/)[0].replace(/[^\p{L}'-]/gu, "");
+  if (!p || p.length < 2) return "";
+  if (/[\d_@.]/.test(bruto.split(/\s+/)[0])) return "";
+  if (!/\s/.test(bruto) && p.length > 12) return "";
+  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
 function preencher(texto, c, extra = {}) {
   const vars = {
@@ -31,7 +46,7 @@ function preencher(texto, c, extra = {}) {
     telefone: c.telefone,
     ...extra
   };
-  return (texto ?? "").replace(/\{([a-z0-9_]+)\}/gi, (m, k) => k.toLowerCase() in vars ? vars[k.toLowerCase()] : m).replace(/ {2,}/g, " ");
+  return (texto ?? "").replace(/\{([a-z0-9_]+)\}/gi, (m, k) => k.toLowerCase() in vars ? vars[k.toLowerCase()] : m).replace(/ {2,}/g, " ").replace(/[ \t]*,[ \t]*([!?.])/g, "$1").replace(/(^|\n)[ \t]*,[ \t]*(\p{L})/gu, (_m, ini, l) => ini + l.toUpperCase());
 }
 function token() {
   return Math.random().toString(36).slice(2, 10);
@@ -412,7 +427,7 @@ function horaBrasilia(d) {
 function diaBrasilia(d) {
   return new Date(d.getTime() - 3 * 36e5).getUTCDay();
 }
-async function receberMensagem(ctx, c, funilPadrao, texto) {
+async function receberMensagem(ctx, c, funilPadrao, texto, op = {}) {
   if (!c.ja_respondeu && (c.bloco_atual || c.finalizado)) {
     await patch(ctx, c, { ja_respondeu: true });
     await evento(ctx, c, "respondeu");
@@ -434,7 +449,10 @@ async function receberMensagem(ctx, c, funilPadrao, texto) {
   const funil = await ctx.store.funil(c.funil_id);
   if (!funil) return;
   const ag = c.aguardando;
-  if (!ag) return;
+  if (!ag) {
+    if (c.pix_ativo && !op.atrasada) await duvidaComPixAberto(ctx, c, funil, texto);
+    return;
+  }
   const n = no(funil, ag.bloco);
   if (!n) return;
   const cfg = n.data.config ?? {};
@@ -444,9 +462,9 @@ async function receberMensagem(ctx, c, funilPadrao, texto) {
     await patch(ctx, c, { aguardando: null });
     await executarDesde(ctx, c, funil, proximo(funil, n.id, saida), texto);
   };
-  const repetir = async (msg) => {
+  const repetir = async (msg, extra = {}) => {
     await enviarTexto(ctx, c, msg);
-    await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
+    await patch(ctx, c, { aguardando: { ...ag, ...extra, tentativas: ag.tentativas + 1 } });
   };
   switch (ag.tipo) {
     case "pergunta": {
@@ -470,14 +488,39 @@ async function receberMensagem(ctx, c, funilPadrao, texto) {
       const num = texto.match(/\d+/);
       let i = num ? Number(num[0]) - 1 : -1;
       if (!(i >= 0 && i < opcoes.length)) i = opcoes.findIndex((o) => normalizar(texto).includes(normalizar(o)) && normalizar(o).length > 0);
+      if (i < 0) i = opcaoPorPalavra(texto, opcoes);
       if (i >= 0) return seguir(`opcao_${i}`);
-      return repetir(cfg.msgInvalida || "Responda só com o número da opção 🙂");
+      if (op.atrasada) return;
+      if (ag.tentativas >= 1) return seguir("sem_resposta");
+      const lista = opcoes.map((o, k) => `*${k + 1}.* ${o}`).join("\n");
+      return repetir(ehReacao(texto) ? `🙏 Só pra eu te mostrar o certo, me conta: é pra onde?
+
+${lista}` : cfg.msgInvalida || `Me responde com o número da opção, tá? 🙂
+
+${lista}`);
     }
     case "objecoes": {
-      if (!negou(texto) && contemAlguma(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
+      const pergunta = querInformacao(texto);
+      if (!negou(texto) && !pergunta && contemAlguma(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
       const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
-      if (cfg.naoEntendeu) return repetir(cfg.naoEntendeu);
+      const reacao = ehReacao(texto);
+      if (op.atrasada && (reacao || normalizar(texto).length < 15)) return;
+      if (reacao) {
+        if (ag.reacoes) return;
+        return repetir(cfg.msgReacao || "🙏🙏 Quer que eu já gere seu Pix pra você receber agora?", { reacoes: 1 });
+      }
+      if (cfg.iaLigada && ctx.ia) {
+        const r = await ctx.ia(c, configIAObjecoes(cfg));
+        if (!("erro" in r)) {
+          await enviarRespostaIA(ctx, c, r.resposta, false);
+          if (r.concluido) return seguir("comprar");
+          await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
+          return;
+        }
+        ctx.log?.(`IA nas objeções falhou: ${r.erro}`);
+      }
+      if (cfg.naoEntendeu && !ag.padrao) return repetir(cfg.naoEntendeu, { padrao: 1 });
       return;
     }
     case "upsell": {
@@ -556,6 +599,51 @@ async function pixPago(ctx, c, pagamentoId) {
     }
   }
   await executarDesde(ctx, c, funil, proximo(funil, ativo.bloco, "pagou"), "");
+}
+var PALAVRAS_VAZIAS = /* @__PURE__ */ new Set(["na", "no", "em", "de", "do", "da", "pra", "para", "com", "o", "a", "os", "as", "um", "uma", "e", "ou", "meu", "minha"]);
+function opcaoPorPalavra(texto, opcoes) {
+  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ")} `;
+  const achadas = opcoes.map((o, i) => ({ i, hits: normalizar(o).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length >= 4 && !PALAVRAS_VAZIAS.has(w)).filter((w) => t.includes(` ${w} `) || t.includes(` ${w.slice(0, -1)} `)).length })).filter((x) => x.hits > 0).sort((a, b) => b.hits - a.hits);
+  return achadas.length && (achadas.length === 1 || achadas[0].hits > achadas[1].hits) ? achadas[0].i : -1;
+}
+function configIAObjecoes(cfg) {
+  return {
+    instrucoes: [
+      cfg.iaInstrucoes || "Você é a pessoa que vende este produto no WhatsApp: simpática, acolhedora e direta.",
+      "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
+      "Se fizer sentido, termine com uma pergunta curta convidando a gerar o Pix (sem repetir a mesma frase de antes).",
+      "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto."
+    ].join("\n"),
+    conhecimento: cfg.iaConhecimento || "",
+    objetivo: "o cliente dizer que quer comprar ou pedir o Pix"
+  };
+}
+async function duvidaComPixAberto(ctx, c, funil, texto) {
+  if (ehReacao(texto)) return;
+  const usos = Number(c.campos.__ia_pix ?? 0);
+  if (usos >= 6) return;
+  await patch(ctx, c, { campos: { ...c.campos, __ia_pix: String(usos + 1) } });
+  const obj = funil.grafo.nodes.find((n) => n.data.tipo === "objecoes")?.data.config ?? {};
+  const resposta = (obj.objecoes ?? []).find((o) => contemAlguma(texto, palavras(o.palavras)))?.resposta;
+  if (resposta) {
+    await enviarTexto(ctx, c, resposta.replace(/\s*Posso gerar seu Pix\??/i, " Seu Pix está aqui em cima 👆"));
+    return;
+  }
+  if (obj.iaLigada && ctx.ia) {
+    const base2 = configIAObjecoes(obj);
+    const r = await ctx.ia(c, {
+      ...base2,
+      instrucoes: `${base2.instrucoes}
+O Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não diga que vai gerar outro. Responda a dúvida e, se fizer sentido, lembre que é só copiar o código do Pix aí em cima e que o produto chega sozinho assim que o pagamento cair. Se disser que já pagou, diga que a confirmação é automática e chega em instantes.`,
+      objetivo: "tirar a dúvida e o cliente pagar o Pix que já está na conversa"
+    });
+    if (!("erro" in r)) {
+      await enviarRespostaIA(ctx, c, r.resposta, false);
+      return;
+    }
+    ctx.log?.(`IA com Pix aberto falhou: ${r.erro}`);
+  }
+  if (usos === 0) await enviarTexto(ctx, c, "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌");
 }
 
 // supabase/functions/motor/gateway.ts
@@ -1362,7 +1450,7 @@ ${m.texto}`;
   return { texto, entrada: j.usageMetadata?.promptTokenCount ?? 0, saida: j.usageMetadata?.candidatesTokenCount ?? 0 };
 }
 function montarSistema(c, b) {
-  const nome = (c.nome ?? c.campos?.nome ?? "").trim().split(/\s+/)[0] || "";
+  const nome = primeiroNome(c.nome) || primeiroNome(c.campos?.nome ?? null);
   const campos = Object.entries(c.campos ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`).join("; ");
   return [
     "Você é um vendedor atendendo um cliente pelo WhatsApp, em português do Brasil.",
@@ -2067,7 +2155,7 @@ async function relogio(req, cfg) {
       if (a.tipo === "pix_pago") {
         await pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
       } else if (a.tipo === "reprocessar") {
-        await receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato), String(a.dados?.texto ?? ""));
+        await receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato), String(a.dados?.texto ?? ""), { atrasada: true });
       } else {
         await executarAgendamento(ctx, contato, a.tipo, a.dados ?? {});
       }

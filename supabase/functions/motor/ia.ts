@@ -1,6 +1,6 @@
 // Agente de IA: OpenAI, Claude (Anthropic) ou Gemini — a chave fica só no servidor (tabela ia_config).
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Config, Contato } from "./motor.ts";
+import { primeiroNome, type Config, type Contato } from "./motor.ts";
 
 export type Provedor = "openai" | "anthropic" | "gemini";
 export type ConfigIA = { provedor: Provedor; modelo: string; chave: string };
@@ -94,7 +94,7 @@ async function chamar(cfg: ConfigIA, sistema: string, msgs: Msg[]) {
 }
 
 function montarSistema(c: Contato, b: Config) {
-  const nome = (c.nome ?? c.campos?.nome ?? "").trim().split(/\s+/)[0] || "";
+  const nome = primeiroNome(c.nome) || primeiroNome(c.campos?.nome ?? null);
   const campos = Object.entries(c.campos ?? {})
     .filter(([, v]) => v)
     .map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`)

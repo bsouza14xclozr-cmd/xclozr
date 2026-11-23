@@ -316,7 +316,22 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
     campos: [
       { tipo: "texto", chave: "palavrasCompra", rotulo: "Palavras de quem quer comprar", placeholder: "quero, sim, pix, bora, manda" },
       { tipo: "objecoes", chave: "objecoes", rotulo: "Objeções e respostas" },
-      { tipo: "textarea", chave: "naoEntendeu", rotulo: "Se não entender a mensagem", placeholder: "Posso te mandar o Pix agora?" },
+      {
+        tipo: "booleano",
+        chave: "iaLigada",
+        rotulo: "🤖 Responder com IA quando nenhuma palavra-chave bater",
+        dica: "Usa o Agente de IA (menu Agente de IA) para entender o que o cliente escreveu e responder de verdade. Também responde dúvidas depois que o Pix foi enviado.",
+      },
+      {
+        tipo: "textarea",
+        chave: "iaConhecimento",
+        rotulo: "O que a IA sabe do produto",
+        placeholder: "Nome, preço, o que vem, como recebe, formas de pagamento, perguntas comuns…",
+        dica: "A IA só usa o que estiver aqui: nunca inventa preço, prazo ou garantia.",
+      },
+      { tipo: "textarea", chave: "iaInstrucoes", rotulo: "Jeito de falar da IA (opcional)", placeholder: "Ex.: acolhedora, cristã, chama de irmão(ã), frases curtas" },
+      { tipo: "textarea", chave: "naoEntendeu", rotulo: "Se não entender a mensagem (sem IA, vai uma vez só)", placeholder: "Posso te mandar o Pix agora?" },
+      { tipo: "texto", chave: "msgReacao", rotulo: "Se responder só “amém”, “🙏”, “obrigado” (vai uma vez só)", placeholder: "🙏🙏 Quer que eu já gere seu Pix pra você receber agora?" },
       { tipo: "numero", chave: "esperarMin", rotulo: "Esperar resposta por", min: 1, sufixo: "minutos" },
     ],
     padrao: () => ({

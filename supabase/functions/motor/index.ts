@@ -617,7 +617,7 @@ async function relogio(req: Request, cfg: Record<string, string>) {
       if (a.tipo === "pix_pago") {
         await M.pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
       } else if (a.tipo === "reprocessar") {
-        await M.receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato), String(a.dados?.texto ?? ""));
+        await M.receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato), String(a.dados?.texto ?? ""), { atrasada: true });
       } else {
         await M.executarAgendamento(ctx, contato, a.tipo, a.dados ?? {});
       }

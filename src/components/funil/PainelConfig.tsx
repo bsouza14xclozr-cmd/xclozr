@@ -583,9 +583,12 @@ function CampoForm({
       );
     case "booleano":
       return (
-        <label className="flex items-center gap-3 text-sm">
-          <input type="checkbox" className="h-4 w-4 accent-limao" checked={Boolean(v)} onChange={(e) => set(campo.chave, e.target.checked)} />
-          {campo.rotulo}
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-limao" checked={Boolean(v)} onChange={(e) => set(campo.chave, e.target.checked)} />
+          <span className="flex flex-col gap-0.5">
+            {campo.rotulo}
+            {campo.dica && <span className="text-[11px] text-suave">{campo.dica}</span>}
+          </span>
         </label>
       );
     case "lista":
