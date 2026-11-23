@@ -1385,7 +1385,11 @@ function extrairJson(t) {
     return null;
   }
 }
-async function chamar2(cfg, sistema, msgs) {
+async function chamar2(cfg, sis, msgs) {
+  const { fixo, variavel = "" } = typeof sis === "string" ? { fixo: sis } : sis;
+  const sistema = variavel ? `${fixo}
+
+${variavel}` : fixo;
   const sinal = AbortSignal.timeout(3e4);
   if (cfg.provedor === "openai") {
     const r2 = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -1401,7 +1405,8 @@ async function chamar2(cfg, sistema, msgs) {
     });
     const j2 = await r2.json().catch(() => ({}));
     if (!r2.ok) throw new Error(j2?.error?.message ?? `OpenAI ${r2.status}`);
-    return { texto: String(j2.choices?.[0]?.message?.content ?? ""), entrada: j2.usage?.prompt_tokens ?? 0, saida: j2.usage?.completion_tokens ?? 0 };
+    const cache2 = j2.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+    return { texto: String(j2.choices?.[0]?.message?.content ?? ""), entrada: (j2.usage?.prompt_tokens ?? 0) - cache2, saida: j2.usage?.completion_tokens ?? 0, cacheLeitura: cache2, cacheEscrita: 0 };
   }
   if (cfg.provedor === "anthropic") {
     const juntas = [];
@@ -1418,12 +1423,29 @@ ${m.texto}`;
       method: "POST",
       signal: sinal,
       headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: cfg.modelo, max_tokens: LIMITE_TOKENS, system: sistema, messages: juntas })
+      body: JSON.stringify({
+        model: cfg.modelo,
+        max_tokens: LIMITE_TOKENS,
+        // cache de prompt: as instruções fixas ficam 1 h em cache (servem para todos os clientes)…
+        system: [
+          { type: "text", text: fixo, cache_control: { type: "ephemeral", ttl: "1h" } },
+          ...variavel ? [{ type: "text", text: variavel }] : []
+        ],
+        // …e a conversa de cada cliente fica 5 min (a próxima resposta dele reaproveita o histórico)
+        cache_control: { type: "ephemeral" },
+        messages: juntas
+      })
     });
     const j2 = await r2.json().catch(() => ({}));
     if (!r2.ok) throw new Error(j2?.error?.message ?? `Claude ${r2.status}`);
     const texto2 = (j2.content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("");
-    return { texto: texto2, entrada: j2.usage?.input_tokens ?? 0, saida: j2.usage?.output_tokens ?? 0 };
+    return {
+      texto: texto2,
+      entrada: j2.usage?.input_tokens ?? 0,
+      saida: j2.usage?.output_tokens ?? 0,
+      cacheLeitura: j2.usage?.cache_read_input_tokens ?? 0,
+      cacheEscrita: j2.usage?.cache_creation_input_tokens ?? 0
+    };
   }
   const contents = [];
   for (const m of msgs) {
@@ -1447,12 +1469,13 @@ ${m.texto}`;
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j?.error?.message ?? `Gemini ${r.status}`);
   const texto = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
-  return { texto, entrada: j.usageMetadata?.promptTokenCount ?? 0, saida: j.usageMetadata?.candidatesTokenCount ?? 0 };
+  const cache = j.usageMetadata?.cachedContentTokenCount ?? 0;
+  return { texto, entrada: (j.usageMetadata?.promptTokenCount ?? 0) - cache, saida: j.usageMetadata?.candidatesTokenCount ?? 0, cacheLeitura: cache, cacheEscrita: 0 };
 }
 function montarSistema(c, b) {
   const nome = primeiroNome(c.nome) || primeiroNome(c.campos?.nome ?? null);
-  const campos = Object.entries(c.campos ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`).join("; ");
-  return [
+  const campos = Object.entries(c.campos ?? {}).filter(([k, v]) => v && !k.startsWith("__")).map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`).join("; ");
+  const fixo = [
     "Você é um vendedor atendendo um cliente pelo WhatsApp, em português do Brasil.",
     b.instrucoes ? `
 QUEM VOCÊ É E COMO AGIR:
@@ -1462,8 +1485,6 @@ INFORMAÇÕES DO PRODUTO (use só isto; nunca invente preço, prazo ou garantia)
 ${b.conhecimento}` : "",
     b.objetivo ? `
 OBJETIVO: ${b.objetivo}` : "\nOBJETIVO: tirar as dúvidas e levar o cliente a decidir comprar.",
-    `
-CLIENTE: ${nome ? `primeiro nome ${nome}` : "nome desconhecido"}${campos ? `; ${campos}` : ""}.`,
     "\nREGRAS:",
     "- Mensagens curtas e naturais, como no WhatsApp (1 a 3 frases). Sem títulos, sem markdown, no máximo 1 emoji.",
     "- Faça uma pergunta por vez. Não repita o que já foi dito.",
@@ -1472,6 +1493,8 @@ CLIENTE: ${nome ? `primeiro nome ${nome}` : "nome desconhecido"}${campos ? `; ${
     '\nResponda SOMENTE com um JSON: {"resposta": "texto para o cliente", "concluido": true ou false}.',
     "concluido = true apenas quando o OBJETIVO foi atingido (ex.: o cliente disse claramente que quer comprar)."
   ].filter(Boolean).join("\n");
+  const variavel = `CLIENTE DESTA CONVERSA: ${nome ? `primeiro nome ${nome}` : "nome desconhecido (não invente um nome)"}${campos ? `; ${campos}` : ""}.`;
+  return { fixo, variavel };
 }
 async function configIA(db2, donoId) {
   const { data } = await db2.from("ia_config").select("provedor, modelo, chave").eq("dono_id", donoId).maybeSingle();
@@ -1494,6 +1517,8 @@ async function responderIA(db2, donoId, c, bloco) {
       modelo: cfg.modelo,
       tokens_entrada: r.entrada,
       tokens_saida: r.saida,
+      tokens_cache_leitura: r.cacheLeitura,
+      tokens_cache_escrita: r.cacheEscrita,
       simulacao: c.simulacao
     });
     const j = extrairJson(r.texto);

@@ -66,7 +66,7 @@ export function IaCliente() {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
-  const [uso, setUso] = useState<{ respostas: number; entrada: number; saida: number; hoje: number } | null>(null);
+  const [uso, setUso] = useState<{ respostas: number; entrada: number; saida: number; cache: number; hoje: number } | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -80,12 +80,13 @@ export function IaCliente() {
       setErro((e as Error).message);
     }
     const desde = new Date(Date.now() - 30 * 86_400_000).toISOString();
-    const { data } = await createClient().from("ia_uso").select("tokens_entrada, tokens_saida, criado_em").gte("criado_em", desde).limit(10000);
-    const linhas = (data ?? []) as { tokens_entrada: number; tokens_saida: number; criado_em: string }[];
+    const { data } = await createClient().from("ia_uso").select("tokens_entrada, tokens_saida, tokens_cache_leitura, tokens_cache_escrita, criado_em").gte("criado_em", desde).limit(10000);
+    const linhas = (data ?? []) as { tokens_entrada: number; tokens_saida: number; tokens_cache_leitura: number; tokens_cache_escrita: number; criado_em: string }[];
     const hoje = new Date().toDateString();
     setUso({
       respostas: linhas.length,
-      entrada: linhas.reduce((a, l) => a + l.tokens_entrada, 0),
+      entrada: linhas.reduce((a, l) => a + l.tokens_entrada + (l.tokens_cache_escrita ?? 0), 0),
+      cache: linhas.reduce((a, l) => a + (l.tokens_cache_leitura ?? 0), 0),
       saida: linhas.reduce((a, l) => a + l.tokens_saida, 0),
       hoje: linhas.filter((l) => new Date(l.criado_em).toDateString() === hoje).length,
     });
@@ -234,7 +235,12 @@ export function IaCliente() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <Stat label="Respostas da IA hoje" value={uso ? String(uso.hoje) : "…"} />
         <Stat label="Respostas (30 dias)" value={uso ? String(uso.respostas) : "…"} />
-        <Stat label="Tokens lidos (30 dias)" value={uso ? uso.entrada.toLocaleString("pt-BR") : "…"} hint="histórico da conversa + instruções" />
+        <Stat label="Tokens lidos (30 dias)" value={uso ? uso.entrada.toLocaleString("pt-BR") : "…"} hint="histórico da conversa + instruções, preço cheio" />
+        <Stat
+          label="Lidos do cache (30 dias)"
+          value={uso ? (uso.entrada + uso.cache > 0 ? `${Math.round((uso.cache / (uso.entrada + uso.cache)) * 100)}%` : "—") : "…"}
+          hint={uso ? `${uso.cache.toLocaleString("pt-BR")} tokens até 90% mais baratos` : undefined}
+        />
         <Stat label="Tokens escritos (30 dias)" value={uso ? uso.saida.toLocaleString("pt-BR") : "…"} hint="o custo exato aparece no painel da IA" />
       </div>
 

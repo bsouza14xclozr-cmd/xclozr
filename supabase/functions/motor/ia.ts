@@ -26,7 +26,17 @@ function extrairJson(t: string): { resposta?: unknown; concluido?: unknown } | n
   }
 }
 
-async function chamar(cfg: ConfigIA, sistema: string, msgs: Msg[]) {
+/**
+ * Instruções divididas em duas partes para o cache de prompt:
+ * - fixo: igual para todos os clientes do mesmo funil (regras, produto) → vai primeiro e fica em cache
+ * - variavel: muda por cliente (nome, campos) → vai depois, fora do cache
+ */
+export type Sistema = { fixo: string; variavel?: string };
+type Uso = { texto: string; entrada: number; saida: number; cacheLeitura: number; cacheEscrita: number };
+
+async function chamar(cfg: ConfigIA, sis: Sistema | string, msgs: Msg[]): Promise<Uso> {
+  const { fixo, variavel = "" } = typeof sis === "string" ? { fixo: sis } : sis;
+  const sistema = variavel ? `${fixo}\n\n${variavel}` : fixo;
   const sinal = AbortSignal.timeout(30_000);
   if (cfg.provedor === "openai") {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -42,7 +52,9 @@ async function chamar(cfg: ConfigIA, sistema: string, msgs: Msg[]) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message ?? `OpenAI ${r.status}`);
-    return { texto: String(j.choices?.[0]?.message?.content ?? ""), entrada: j.usage?.prompt_tokens ?? 0, saida: j.usage?.completion_tokens ?? 0 };
+    // a OpenAI faz cache sozinha do começo repetido do prompt (por isso o fixo vem primeiro)
+    const cache = j.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+    return { texto: String(j.choices?.[0]?.message?.content ?? ""), entrada: (j.usage?.prompt_tokens ?? 0) - cache, saida: j.usage?.completion_tokens ?? 0, cacheLeitura: cache, cacheEscrita: 0 };
   }
 
   if (cfg.provedor === "anthropic") {
@@ -60,12 +72,29 @@ async function chamar(cfg: ConfigIA, sistema: string, msgs: Msg[]) {
       method: "POST",
       signal: sinal,
       headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: cfg.modelo, max_tokens: LIMITE_TOKENS, system: sistema, messages: juntas }),
+      body: JSON.stringify({
+        model: cfg.modelo,
+        max_tokens: LIMITE_TOKENS,
+        // cache de prompt: as instruções fixas ficam 1 h em cache (servem para todos os clientes)…
+        system: [
+          { type: "text", text: fixo, cache_control: { type: "ephemeral", ttl: "1h" } },
+          ...(variavel ? [{ type: "text", text: variavel }] : []),
+        ],
+        // …e a conversa de cada cliente fica 5 min (a próxima resposta dele reaproveita o histórico)
+        cache_control: { type: "ephemeral" },
+        messages: juntas,
+      }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message ?? `Claude ${r.status}`);
     const texto = (j.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("");
-    return { texto, entrada: j.usage?.input_tokens ?? 0, saida: j.usage?.output_tokens ?? 0 };
+    return {
+      texto,
+      entrada: j.usage?.input_tokens ?? 0,
+      saida: j.usage?.output_tokens ?? 0,
+      cacheLeitura: j.usage?.cache_read_input_tokens ?? 0,
+      cacheEscrita: j.usage?.cache_creation_input_tokens ?? 0,
+    };
   }
 
   // gemini
@@ -90,21 +119,23 @@ async function chamar(cfg: ConfigIA, sistema: string, msgs: Msg[]) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j?.error?.message ?? `Gemini ${r.status}`);
   const texto = (j.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
-  return { texto, entrada: j.usageMetadata?.promptTokenCount ?? 0, saida: j.usageMetadata?.candidatesTokenCount ?? 0 };
+  // o Gemini também faz cache sozinho do começo repetido do prompt
+  const cache = j.usageMetadata?.cachedContentTokenCount ?? 0;
+  return { texto, entrada: (j.usageMetadata?.promptTokenCount ?? 0) - cache, saida: j.usageMetadata?.candidatesTokenCount ?? 0, cacheLeitura: cache, cacheEscrita: 0 };
 }
 
-function montarSistema(c: Contato, b: Config) {
+function montarSistema(c: Contato, b: Config): Sistema {
   const nome = primeiroNome(c.nome) || primeiroNome(c.campos?.nome ?? null);
   const campos = Object.entries(c.campos ?? {})
-    .filter(([, v]) => v)
+    .filter(([k, v]) => v && !k.startsWith("__"))
     .map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`)
     .join("; ");
-  return [
+  // tudo que é igual para todos os clientes vem primeiro (fica em cache); o que é do cliente vai no fim
+  const fixo = [
     "Você é um vendedor atendendo um cliente pelo WhatsApp, em português do Brasil.",
     b.instrucoes ? `\nQUEM VOCÊ É E COMO AGIR:\n${b.instrucoes}` : "",
     b.conhecimento ? `\nINFORMAÇÕES DO PRODUTO (use só isto; nunca invente preço, prazo ou garantia):\n${b.conhecimento}` : "",
     b.objetivo ? `\nOBJETIVO: ${b.objetivo}` : "\nOBJETIVO: tirar as dúvidas e levar o cliente a decidir comprar.",
-    `\nCLIENTE: ${nome ? `primeiro nome ${nome}` : "nome desconhecido"}${campos ? `; ${campos}` : ""}.`,
     "\nREGRAS:",
     "- Mensagens curtas e naturais, como no WhatsApp (1 a 3 frases). Sem títulos, sem markdown, no máximo 1 emoji.",
     "- Faça uma pergunta por vez. Não repita o que já foi dito.",
@@ -115,6 +146,8 @@ function montarSistema(c: Contato, b: Config) {
   ]
     .filter(Boolean)
     .join("\n");
+  const variavel = `CLIENTE DESTA CONVERSA: ${nome ? `primeiro nome ${nome}` : "nome desconhecido (não invente um nome)"}${campos ? `; ${campos}` : ""}.`;
+  return { fixo, variavel };
 }
 
 export async function configIA(db: SupabaseClient, donoId: string): Promise<ConfigIA | null> {
@@ -149,6 +182,8 @@ export async function responderIA(db: SupabaseClient, donoId: string, c: Contato
       modelo: cfg.modelo,
       tokens_entrada: r.entrada,
       tokens_saida: r.saida,
+      tokens_cache_leitura: r.cacheLeitura,
+      tokens_cache_escrita: r.cacheEscrita,
       simulacao: c.simulacao,
     });
     const j = extrairJson(r.texto);
