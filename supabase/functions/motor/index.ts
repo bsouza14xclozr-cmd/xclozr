@@ -315,28 +315,97 @@ async function reiniciarFluxo(req: Request) {
   }
 }
 
-// Resposta manual pelo painel (tela Conversas)
+// Resposta manual pelo painel (tela Conversas): texto, arquivo/mídia ou entrega de produto
 async function enviarManual(req: Request) {
   const donoId = await usuarioDoJwt(req);
   if (!donoId) return json({ erro: "não autenticado" }, 401);
   const corpo = await req.json().catch(() => ({}));
-  const texto = String(corpo.texto ?? "").trim().slice(0, 4000);
-  if (!texto) return json({ erro: "mensagem vazia" }, 400);
   const { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("id", String(corpo.contato_id ?? "")).eq("dono_id", donoId).maybeSingle();
   if (!linha) return json({ erro: "conversa não encontrada" }, 404);
   const contato = linhaParaContato(linha);
   if (contato.simulacao) return json({ erro: "conversa de simulação" }, 400);
   const cfg = await configMotor(db);
-  try {
-    await criarEnvioEvolution(db, cfg).enviar(contato, { tipo: "texto", texto, esperaMs: 0 });
-  } catch (e) {
-    return json({ erro: `Não consegui enviar: ${(e as Error).message}` }, 400);
+  const envio = criarEnvioEvolution(db, cfg);
+
+  // o que vai ser enviado, em ordem
+  const saidas: M.Saida[] = [];
+  let produtoEntregue: { id: string; preco_centavos: number; nome: string } | null = null;
+
+  if (corpo.produto_id) {
+    const { data: p } = await db
+      .from("produtos")
+      .select("id, nome, preco_centavos, entrega_tipo, entrega_conteudo, mensagem_entrega")
+      .eq("id", String(corpo.produto_id))
+      .eq("dono_id", donoId)
+      .maybeSingle();
+    if (!p) return json({ erro: "produto não encontrado" }, 404);
+    if (!p.entrega_conteudo) return json({ erro: `O produto “${p.nome}” não tem arquivo/link de entrega cadastrado (Produtos e Pix).` }, 400);
+    const msg = String(corpo.texto ?? "").trim() || M.preencher(p.mensagem_entrega || "Aqui está o seu {produto} 👇", contato, { produto: p.nome, preco: (p.preco_centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) });
+    if (msg) saidas.push({ tipo: "texto", texto: msg.slice(0, 4000), esperaMs: 1500 });
+    if (p.entrega_tipo === "arquivo") saidas.push({ tipo: "arquivo", url: p.entrega_conteudo, nome: p.nome, esperaMs: 1500 });
+    else saidas.push({ tipo: "texto", texto: p.entrega_conteudo, esperaMs: 1200 });
+    produtoEntregue = { id: p.id, preco_centavos: p.preco_centavos, nome: p.nome };
+  } else if (corpo.midia) {
+    const m = corpo.midia as { url?: string; tipo?: string; nome?: string };
+    const url = String(m.url ?? "");
+    // só arquivos que o próprio dono subiu no Storage do XClozr
+    if (!url.includes(`/storage/v1/object/public/midias/${donoId}/`)) return json({ erro: "arquivo inválido" }, 400);
+    const tipo = ["imagem", "video", "audio", "arquivo"].includes(String(m.tipo)) ? String(m.tipo) : "arquivo";
+    const legenda = String(corpo.texto ?? "").trim().slice(0, 1000);
+    if (tipo === "audio") {
+      saidas.push({ tipo: "audio", url, esperaMs: 1500 });
+      if (legenda) saidas.push({ tipo: "texto", texto: legenda, esperaMs: 800 });
+    } else if (tipo === "arquivo") {
+      saidas.push({ tipo: "arquivo", url, nome: String(m.nome ?? "arquivo").slice(0, 120), esperaMs: 1500 });
+      if (legenda) saidas.push({ tipo: "texto", texto: legenda, esperaMs: 800 });
+    } else saidas.push({ tipo: tipo as "imagem" | "video", url, legenda, esperaMs: 1500 });
+  } else {
+    const texto = String(corpo.texto ?? "").trim().slice(0, 4000);
+    if (!texto) return json({ erro: "mensagem vazia" }, 400);
+    saidas.push({ tipo: "texto", texto, esperaMs: 0 });
   }
-  await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "humano", tipo: "texto", conteudo: texto });
+
+  for (const sd of saidas) {
+    try {
+      await envio.enviar(contato, sd);
+    } catch (e) {
+      return json({ erro: `Não consegui enviar: ${(e as Error).message}` }, 400);
+    }
+    await db.from("mensagens").insert({
+      dono_id: donoId,
+      contato_id: contato.id,
+      autor: "humano",
+      tipo: sd.tipo,
+      conteudo: sd.tipo === "texto" ? sd.texto : "legenda" in sd ? sd.legenda || null : sd.tipo === "arquivo" ? sd.nome : null,
+      midia_url: "url" in sd ? sd.url : null,
+    });
+  }
+
   const patch: Record<string, unknown> = { ultima_msg_em: new Date().toISOString() };
   if (corpo.pausar_robo !== false) patch.robo_ativo = false;
+
+  // entrega manual: pode registrar como venda paga (entra no faturamento, relatórios e notificação)
+  if (produtoEntregue && corpo.registrar_venda) {
+    const valor = Math.max(0, Math.round(Number(corpo.valor_centavos ?? produtoEntregue.preco_centavos)));
+    const { data: pg } = await db
+      .from("pagamentos")
+      .insert({ dono_id: donoId, contato_id: contato.id, produto_id: produtoEntregue.id, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway: "manual", simulacao: false })
+      .select("id")
+      .single();
+    if (pg) await db.from("pagamentos").update({ status: "pago", pago_em: new Date().toISOString() }).eq("id", pg.id); // dispara a notificação de venda
+    if (!contato.etiquetas.includes("comprou")) patch.etiquetas = [...contato.etiquetas, "comprou"];
+    // pagou por fora: encerra a cobrança automática (Pix aberto e lembretes)
+    await db.from("pagamentos").update({ status: "expirado" }).eq("contato_id", contato.id).eq("status", "pendente").neq("id", pg?.id ?? "");
+    await ctxPara(donoId, false, cfg).store.cancelarAgendamentos(contato);
+    Object.assign(patch, { pix_ativo: null, aguardando: null, finalizado: true });
+    try {
+      await M.evento(ctxPara(donoId, false, cfg), contato, "pagou");
+    } catch {
+      /* coluna do CRM é opcional */
+    }
+  }
   await db.from("contatos").update(patch).eq("id", contato.id);
-  return json({ ok: true });
+  return json({ ok: true, enviados: saidas.length });
 }
 
 async function simular(req: Request) {

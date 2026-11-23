@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcoesContato } from "@/components/crm/AcoesContato";
 import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui";
+import { BotaoAnexar, ChipAnexo, EntregarProduto, enviarAnexo, type Anexo } from "./EnviarExtras";
 
 type Contato = {
   id: string;
@@ -61,9 +62,13 @@ function Bolha({ m }: { m: Mensagem }) {
         {m.midia_url && m.tipo === "imagem" ? (
           // eslint-disable-next-line @next/next/no-img-element -- mídia enviada pelo funil
           <img src={m.midia_url} alt={m.conteudo ?? "imagem"} className="max-h-60 rounded-lg" />
+        ) : m.midia_url && m.tipo === "audio" ? (
+          <audio src={m.midia_url} controls className="max-w-full" />
+        ) : m.midia_url && m.tipo === "video" ? (
+          <video src={m.midia_url} controls className="max-h-60 rounded-lg" />
         ) : m.midia_url ? (
           <a href={m.midia_url} target="_blank" rel="noreferrer" className="text-azul underline">
-            [{m.tipo}] abrir
+            {m.tipo === "arquivo" ? "📄 abrir arquivo" : `[${m.tipo}] abrir`}
           </a>
         ) : null}
         {m.conteudo && <span className="whitespace-pre-wrap break-words leading-relaxed">{m.conteudo}</span>}
@@ -85,6 +90,9 @@ export function ConversasCliente() {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarAcoes, setMostrarAcoes] = useState(false);
+  const [anexo, setAnexo] = useState<Anexo | null>(null);
+  const [entregando, setEntregando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const selRef = useRef<string | null>(null);
 
@@ -181,8 +189,23 @@ export function ConversasCliente() {
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    if (!atual || !texto.trim()) return;
+    if (!atual || (!texto.trim() && !anexo)) return;
     setErro(null);
+    setAviso(null);
+    if (anexo) {
+      setEnviando(true);
+      try {
+        await enviarAnexo(atual.id, anexo, texto, pausar);
+        setAnexo(null);
+        setTexto("");
+        if (pausar) setContatos((cs) => cs?.map((c) => (c.id === atual.id ? { ...c, robo_ativo: false } : c)) ?? cs);
+      } catch (err) {
+        setErro((err as Error).message);
+      } finally {
+        setEnviando(false);
+      }
+      return;
+    }
     setEnviando(true);
     const { error } = await createClient().functions.invoke("motor/enviar", { body: { contato_id: atual.id, texto, pausar_robo: pausar } });
     setEnviando(false);
@@ -343,7 +366,40 @@ export function ConversasCliente() {
 
               <form onSubmit={enviar} className="flex flex-col gap-2 border-t border-borda p-3">
                 {erro && <p className="text-sm text-vermelho">{erro}</p>}
+                {aviso && <p className="text-sm text-limao">✓ {aviso}</p>}
+                {entregando && (
+                  <EntregarProduto
+                    key={atual.id}
+                    contatoId={atual.id}
+                    pausar={pausar}
+                    onFechar={() => setEntregando(false)}
+                    onFeito={(m) => {
+                      setEntregando(false);
+                      setAviso(m);
+                      if (pausar) setContatos((cs) => cs?.map((c) => (c.id === atual.id ? { ...c, robo_ativo: false } : c)) ?? cs);
+                    }}
+                  />
+                )}
+                {anexo && <ChipAnexo a={anexo} onRemover={() => setAnexo(null)} />}
                 <div className="flex items-end gap-2">
+                  <BotaoAnexar
+                    desativado={enviando}
+                    onErro={(m) => setErro(m)}
+                    onAnexo={(a) => {
+                      setErro(null);
+                      setAnexo(a);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEntregando((v) => !v)}
+                    aria-expanded={entregando}
+                    title="Entregar um produto agora"
+                    aria-label="Entregar produto"
+                    className={`min-h-11 shrink-0 rounded-[10px] border px-3 text-base hover:bg-elevado ${entregando ? "border-limao/60" : "border-borda"}`}
+                  >
+                    📦
+                  </button>
                   <textarea
                     value={texto}
                     onChange={(e) => setTexto(e.target.value)}
@@ -354,11 +410,11 @@ export function ConversasCliente() {
                       }
                     }}
                     rows={1}
-                    placeholder="Responder como você…"
+                    placeholder={anexo ? (anexo.tipo === "imagem" || anexo.tipo === "video" ? "Legenda (opcional)…" : "Mensagem junto (opcional)…") : "Responder como você…"}
                     aria-label="Mensagem"
                     className="max-h-32 min-h-11 flex-1 resize-none rounded-[10px] border border-borda bg-fundo px-3 py-2.5 text-sm placeholder:text-suave/70 focus:border-limao focus:outline-none"
                   />
-                  <button type="submit" disabled={enviando || !texto.trim()} className="min-h-11 rounded-[10px] bg-limao px-5 text-sm font-bold text-fundo hover:brightness-110 disabled:opacity-50">
+                  <button type="submit" disabled={enviando || (!texto.trim() && !anexo)} className="min-h-11 rounded-[10px] bg-limao px-5 text-sm font-bold text-fundo hover:brightness-110 disabled:opacity-50">
                     {enviando ? "…" : "Enviar"}
                   </button>
                 </div>
