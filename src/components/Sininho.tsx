@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { destravarSom, tocarSom } from "@/lib/som";
 
 type Aviso = { id: string; tipo: string; texto: string; link: string | null; lido: boolean; criado_em: string };
 
-const ICONE: Record<string, string> = { venda: "💰", humano: "🙋", chip: "📵", funil: "⚠️", info: "🔔", trafego: "📈", resumo: "📊" };
+const ICONE: Record<string, string> = { venda: "💰", lead: "💬", humano: "🙋", chip: "📵", funil: "⚠️", info: "🔔", trafego: "📈", resumo: "📊" };
 
 function quando(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -30,11 +31,15 @@ export function Sininho() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carrega os avisos ao abrir o painel
     void carregar();
+    destravarSom();
     const supabase = createClient();
     const canal = supabase
       .channel("avisos")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "avisos" }, (p) => {
-        setAvisos((as) => [p.new as Aviso, ...as].slice(0, 40));
+        const novo = p.new as Aviso;
+        setAvisos((as) => [novo, ...as].slice(0, 40));
+        // cha-ching com o painel aberto (no celular com o app fechado, quem toca é a notificação)
+        if (novo.tipo === "venda") tocarSom("venda");
       })
       .subscribe();
     return () => {

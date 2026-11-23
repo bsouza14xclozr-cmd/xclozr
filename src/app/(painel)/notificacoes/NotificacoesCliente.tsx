@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { SomDeVenda } from "./SomDeVenda";
 
 type Prefs = { ativo: boolean; tipos: string[]; resumo_hora: number };
 type Aparelho = { id: string; endpoint: string; aparelho: string | null; criado_em: string; ultimo_envio: string | null; erro: string | null };
@@ -229,6 +230,8 @@ export function NotificacoesCliente() {
         )}
         {msg && <p className={`text-sm ${msg.ok ? "text-limao" : "text-vermelho"}`}>{msg.texto}</p>}
       </section>
+
+      <SomDeVenda className={cartao} />
 
       <section className={cartao}>
         <div className="flex flex-wrap items-center justify-between gap-2">
