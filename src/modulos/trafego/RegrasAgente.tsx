@@ -2,6 +2,7 @@
 
 // Regras automáticas + agente de tráfego com IA (módulo Tráfego)
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CartaoAgente } from "@/components/Mascote";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
@@ -857,6 +858,19 @@ export function AbaAgente({ conectado }: { conectado: boolean }) {
   return (
     <>
       <Card title="🤖 Agente de tráfego">
+        <CartaoAgente
+          nome="Clozi do Tráfego"
+          papel="trafego"
+          estado={analisando ? "trabalhando" : "parado"}
+          status={
+            analisando
+              ? "analisando suas campanhas…"
+              : travas.agente_modo === "desligado"
+                ? "esperando você clicar em “Analisar agora”"
+                : `pronto · analisa todo dia às ${String(travas.agente_hora).padStart(2, "0")}:00`
+          }
+          detalhe={rels[0] ? `Última análise: ${new Date(rels[0].criado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Ainda não fez nenhuma análise"}
+        />
         <p className="text-sm text-suave">
           Um gestor de tráfego com IA que olha os últimos 7 dias de cada campanha, conjunto e anúncio (gasto, conversas, Pix, vendas e lucro de verdade) e diz o que pausar, o que
           escalar e o que está errado no funil. Usa a mesma IA do menu Agente de IA.

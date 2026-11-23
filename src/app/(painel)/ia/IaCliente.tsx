@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card, PageHeader, Stat } from "@/components/ui";
+import { AtendenteAoVivo } from "./AtendenteAoVivo";
 import { MinhaVoz } from "./MinhaVoz";
 
 type Provedor = "openai" | "anthropic" | "gemini";
@@ -131,6 +132,7 @@ export function IaCliente() {
   return (
     <>
       <PageHeader title="Agente de IA" subtitle="Ligue uma IA para conversar com o cliente dentro do funil" />
+      {status !== null && <AtendenteAoVivo ligado={Boolean(status.configurada)} />}
       <MinhaVoz />
 
       {status === null && !erro && <p className="text-sm text-suave">Carregando…</p>}

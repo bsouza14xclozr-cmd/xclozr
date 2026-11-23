@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AcoesContato } from "@/components/crm/AcoesContato";
 import { createClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/ui";
+import { Mascote } from "@/components/Mascote";
 import { BotaoAnexar, ChipAnexo, EntregarProduto, enviarAnexo, type Anexo } from "./EnviarExtras";
 
 type Contato = {
@@ -93,6 +94,7 @@ export function ConversasCliente() {
   const [anexo, setAnexo] = useState<Anexo | null>(null);
   const [entregando, setEntregando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [agora, setAgora] = useState<number | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const selRef = useRef<string | null>(null);
 
@@ -162,6 +164,14 @@ export function ConversasCliente() {
   }, [carregarLista]);
 
   useEffect(() => {
+    // relógio para o mascote saber se a conversa está "quente"
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marca a hora ao abrir
+    setAgora(Date.now());
+    const t = setInterval(() => setAgora(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
     // link da notificação de lead novo: /conversas?c=<contato>
     const c = new URLSearchParams(window.location.search).get("c");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- conversa vinda do link
@@ -185,6 +195,8 @@ export function ConversasCliente() {
   }, [contatos, busca]);
 
   const atual = contatos?.find((c) => c.id === selecionado) ?? null;
+  const ultimaMsg = mensagens[mensagens.length - 1];
+  const roboTrabalhando = Boolean(atual?.robo_ativo && ultimaMsg && agora !== null && agora - new Date(ultimaMsg.criado_em).getTime() < 90_000);
   const colunaAtual = colunas.find((k) => k.id === atual?.kanban_coluna_id);
 
   async function enviar(e: React.FormEvent) {
@@ -315,8 +327,12 @@ export function ConversasCliente() {
                       atual.robo_ativo ? "border-limao/50 bg-limao-escuro text-limao" : "border-[#5a4220] bg-[#241b0e] text-laranja"
                     }`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${atual.robo_ativo ? "bg-limao" : "bg-laranja"}`} />
-                    {atual.robo_ativo ? "Robô atendendo" : "Robô pausado"}
+                    {atual.robo_ativo ? (
+                      <Mascote papel="atendente" estado={roboTrabalhando ? "trabalhando" : "parado"} tamanho={26} rotulo="" />
+                    ) : (
+                      <span className="h-2 w-2 rounded-full bg-laranja" />
+                    )}
+                    {atual.robo_ativo ? (roboTrabalhando ? "Robô atendendo agora" : "Robô atendendo") : "Robô pausado"}
                   </button>
                   <button
                     type="button"
