@@ -4,6 +4,14 @@
 export type EstadoMascote = "parado" | "trabalhando";
 export type PapelMascote = "atendente" | "trafego";
 
+type Paleta = { clara: string; media: string; escura: string; contorno: string; folha: string; barriga: string; braco: string; destaque: string; luz: string };
+
+/** Cada agente tem sua cor: atendente verde-limão, tráfego azul. */
+export const CORES: Record<PapelMascote, Paleta> = {
+  atendente: { clara: "#b9f5cf", media: "#6fdc98", escura: "#2fae64", contorno: "#2a9d5a", folha: "#8ee6ad", barriga: "#c9f7da", braco: "#5fd18d", destaque: "#5ed98c", luz: "#d9ffe8" },
+  trafego: { clara: "#c6dcff", media: "#6f9dff", escura: "#3567e0", contorno: "#2b55c2", folha: "#8ee6ad", barriga: "#d6e5ff", braco: "#6f98f5", destaque: "#7fb0ff", luz: "#e3eeff" },
+};
+
 const CSS = `
 .mx{overflow:visible}
 .mx-corpo,.mx-broto,.mx-olho,.mx-sombra,.mx-mao-e,.mx-mao-d,.mx-barra,.mx-ponto,.mx-tchau{transform-box:fill-box}
@@ -47,6 +55,7 @@ export function Mascote({
 }) {
   const trab = estado === "trabalhando";
   const id = `mx${papel}${trab ? "t" : "p"}`;
+  const c = CORES[papel];
   return (
     <svg
       viewBox="0 0 200 200"
@@ -59,17 +68,17 @@ export function Mascote({
       <style>{CSS}</style>
       <defs>
         <radialGradient id={`${id}-pele`} cx="38%" cy="30%" r="80%">
-          <stop offset="0" stopColor="#b9f5cf" />
-          <stop offset=".55" stopColor="#6fdc98" />
-          <stop offset="1" stopColor="#2fae64" />
+          <stop offset="0" stopColor={c.clara} />
+          <stop offset=".55" stopColor={c.media} />
+          <stop offset="1" stopColor={c.escura} />
         </radialGradient>
         <linearGradient id={`${id}-note`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#3a3f4b" />
           <stop offset="1" stopColor="#23262e" />
         </linearGradient>
         <radialGradient id={`${id}-luz`} cx="50%" cy="100%" r="70%">
-          <stop offset="0" stopColor="#d9ffe8" />
-          <stop offset="1" stopColor="#d9ffe8" stopOpacity="0" />
+          <stop offset="0" stopColor={c.luz} />
+          <stop offset="1" stopColor={c.luz} stopOpacity="0" />
         </radialGradient>
       </defs>
 
@@ -78,19 +87,19 @@ export function Mascote({
 
       <g className="mx-corpo">
         {/* pezinhos */}
-        <ellipse cx="78" cy="178" rx="15" ry="8" fill="#2a9d5a" />
-        <ellipse cx="122" cy="178" rx="15" ry="8" fill="#2a9d5a" />
+        <ellipse cx="78" cy="178" rx="15" ry="8" fill={c.contorno} />
+        <ellipse cx="122" cy="178" rx="15" ry="8" fill={c.contorno} />
 
         {/* broto na cabeça */}
         <g className="mx-broto">
-          <path d="M100 52 C100 42 101 36 103 30" stroke="#2a9d5a" strokeWidth="4" fill="none" strokeLinecap="round" />
-          <path d="M103 31 C112 20 126 22 128 26 C122 34 110 36 103 31Z" fill="#8ee6ad" stroke="#2a9d5a" strokeWidth="2" />
-          <path d="M102 36 C94 27 82 28 80 32 C86 39 96 40 102 36Z" fill="#6fdc98" stroke="#2a9d5a" strokeWidth="2" />
+          <path d="M100 52 C100 42 101 36 103 30" stroke={c.contorno} strokeWidth="4" fill="none" strokeLinecap="round" />
+          <path d="M103 31 C112 20 126 22 128 26 C122 34 110 36 103 31Z" fill={c.folha} stroke={c.contorno} strokeWidth="2" />
+          <path d="M102 36 C94 27 82 28 80 32 C86 39 96 40 102 36Z" fill={c.media} stroke={c.contorno} strokeWidth="2" />
         </g>
 
         {/* corpo */}
         <path d="M100 50 C146 50 166 86 166 122 C166 158 138 182 100 182 C62 182 34 158 34 122 C34 86 54 50 100 50Z" fill={`url(#${id}-pele)`} />
-        <ellipse cx="100" cy="146" rx="38" ry="28" fill="#c9f7da" opacity=".55" />
+        <ellipse cx="100" cy="146" rx="38" ry="28" fill={c.barriga} opacity=".55" />
 
         {/* luz da tela no rosto */}
         {trab && <ellipse className="mx-brilho" cx="100" cy="118" rx="58" ry="40" fill={`url(#${id}-luz)`} />}
@@ -123,15 +132,15 @@ export function Mascote({
             <path d="M44 104 C44 62 156 62 156 104" stroke="#2b303a" strokeWidth="7" fill="none" strokeLinecap="round" />
             <rect x="34" y="96" width="16" height="26" rx="8" fill="#2b303a" />
             <rect x="150" y="96" width="16" height="26" rx="8" fill="#2b303a" />
-            <rect x="38" y="101" width="8" height="16" rx="4" fill="#5ed98c" />
+            <rect x="38" y="101" width="8" height="16" rx="4" fill={c.destaque} />
             <path d="M156 118 C156 136 140 140 120 136" stroke="#2b303a" strokeWidth="4" fill="none" strokeLinecap="round" />
             <circle cx="117" cy="135.5" r="5" fill="#2b303a" />
           </g>
         ) : trab ? null : (
           <g>
             <circle cx="100" cy="152" r="13" fill="#1b2330" />
-            <path d="M92 157 L98 151 L102 154 L109 146" stroke="#5ed98c" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M104 146 L109 146 L109 151" stroke="#5ed98c" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M92 157 L98 151 L102 154 L109 146" stroke={c.destaque} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M104 146 L109 146 L109 151" stroke={c.destaque} strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </g>
         )}
 
@@ -140,27 +149,27 @@ export function Mascote({
             {/* notebook (tampa virada pra gente) */}
             <path d="M58 150 L142 150 L150 186 L50 186Z" fill={`url(#${id}-note)`} />
             <rect x="46" y="184" width="108" height="7" rx="3" fill="#4a505d" />
-            <circle cx="100" cy="168" r="6" fill="#5ed98c" opacity=".85" />
+            <circle cx="100" cy="168" r="6" fill={c.destaque} opacity=".85" />
             {/* mãozinhas digitando */}
-            <ellipse className="mx-mao-e" cx="72" cy="150" rx="11" ry="8" fill="#5fd18d" stroke="#2a9d5a" strokeWidth="2" />
-            <ellipse className="mx-mao-d" cx="128" cy="150" rx="11" ry="8" fill="#5fd18d" stroke="#2a9d5a" strokeWidth="2" />
+            <ellipse className="mx-mao-e" cx="72" cy="150" rx="11" ry="8" fill={c.braco} stroke={c.contorno} strokeWidth="2" />
+            <ellipse className="mx-mao-d" cx="128" cy="150" rx="11" ry="8" fill={c.braco} stroke={c.contorno} strokeWidth="2" />
             {/* o que ele está fazendo */}
             {papel === "trafego" ? (
               <g transform="translate(150 40)">
                 <rect x="-4" y="-6" width="40" height="34" rx="9" fill="#1b2330" opacity=".92" />
                 <g>
-                  <rect className="mx-barra" x="4" y="4" width="6" height="18" rx="2" fill="#5ed98c" />
-                  <rect className="mx-barra" x="13" y="4" width="6" height="18" rx="2" fill="#8ee6ad" />
-                  <rect className="mx-barra" x="22" y="4" width="6" height="18" rx="2" fill="#5ed98c" />
+                  <rect className="mx-barra" x="4" y="4" width="6" height="18" rx="2" fill={c.destaque} />
+                  <rect className="mx-barra" x="13" y="4" width="6" height="18" rx="2" fill={c.folha} />
+                  <rect className="mx-barra" x="22" y="4" width="6" height="18" rx="2" fill={c.destaque} />
                 </g>
               </g>
             ) : (
               <g transform="translate(146 40)">
                 <path d="M0 0 h40 a8 8 0 0 1 8 8 v14 a8 8 0 0 1 -8 8 h-26 l-8 7 v-7 h-6 a8 8 0 0 1 -8 -8 v-14 a8 8 0 0 1 8 -8z" fill="#1b2330" opacity=".92" />
                 <g>
-                  <circle className="mx-ponto" cx="12" cy="15" r="3.6" fill="#5ed98c" />
-                  <circle className="mx-ponto" cx="24" cy="15" r="3.6" fill="#5ed98c" />
-                  <circle className="mx-ponto" cx="36" cy="15" r="3.6" fill="#5ed98c" />
+                  <circle className="mx-ponto" cx="12" cy="15" r="3.6" fill={c.destaque} />
+                  <circle className="mx-ponto" cx="24" cy="15" r="3.6" fill={c.destaque} />
+                  <circle className="mx-ponto" cx="36" cy="15" r="3.6" fill={c.destaque} />
                 </g>
               </g>
             )}
@@ -168,9 +177,9 @@ export function Mascote({
         ) : (
           <g>
             {/* bracinhos: um acena de vez em quando */}
-            <ellipse cx="42" cy="138" rx="10" ry="15" fill="#5fd18d" stroke="#2a9d5a" strokeWidth="2" transform="rotate(18 42 138)" />
+            <ellipse cx="42" cy="138" rx="10" ry="15" fill={c.braco} stroke={c.contorno} strokeWidth="2" transform="rotate(18 42 138)" />
             <g className="mx-tchau">
-              <ellipse cx="158" cy="138" rx="10" ry="15" fill="#5fd18d" stroke="#2a9d5a" strokeWidth="2" transform="rotate(-18 158 138)" />
+              <ellipse cx="158" cy="138" rx="10" ry="15" fill={c.braco} stroke={c.contorno} strokeWidth="2" transform="rotate(-18 158 138)" />
             </g>
           </g>
         )}
@@ -194,15 +203,16 @@ export function CartaoAgente({
   detalhe?: string;
 }) {
   const trab = estado === "trabalhando";
+  const cor = CORES[papel].destaque;
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-borda bg-cartao p-4">
+    <div className="flex items-center gap-4 rounded-2xl border border-borda bg-cartao p-4" style={{ borderColor: trab ? `${cor}66` : undefined }}>
       <div className="shrink-0 rounded-full bg-fundo p-1.5 ring-1 ring-borda">
         <Mascote estado={estado} papel={papel} tamanho={84} />
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <span className="text-lg font-semibold">{nome}</span>
-        <span className={`flex items-center gap-2 text-sm ${trab ? "text-limao" : "text-suave"}`}>
-          <span className={`h-2.5 w-2.5 rounded-full ${trab ? "animate-pulse bg-limao" : "bg-limao/60"}`} />
+        <span className={`flex items-center gap-2 text-sm ${trab ? "" : "text-suave"}`} style={{ color: trab ? cor : undefined }}>
+          <span className={`h-2.5 w-2.5 rounded-full ${trab ? "animate-pulse" : ""}`} style={{ background: cor, opacity: trab ? 1 : 0.6 }} />
           {status}
         </span>
         {detalhe && <span className="text-xs text-suave">{detalhe}</span>}
