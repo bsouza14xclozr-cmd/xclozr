@@ -397,6 +397,12 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
       { tipo: "textarea", chave: "texto", rotulo: "Mensagem junto do Pix", placeholder: "Aqui está seu Pix! Assim que pagar, te envio na hora.", variaveis: true },
       { tipo: "numero", chave: "esperarMin", rotulo: "Considerar “não pagou” depois de", min: 1, sufixo: "minutos", dica: "Use a saída “Não pagou ainda” para mandar lembretes." },
       { tipo: "numero", chave: "expiraMin", rotulo: "Pix expira em", min: 5, sufixo: "minutos" },
+      {
+        tipo: "booleano",
+        chave: "botaoCopiar",
+        rotulo: "📋 Enviar com botão “Copiar código Pix”",
+        dica: "O cliente toca no botão e cola no app do banco. O código em texto vai logo abaixo, caso o botão não apareça no celular dele. A confirmação do pagamento continua automática.",
+      },
     ],
     padrao: () => ({ produtoId: "", texto: "", esperarMin: 15, expiraMin: 1440 }),
     saidas: () => [

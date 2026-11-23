@@ -62,7 +62,9 @@ export type Saida =
   | { tipo: "texto"; texto: string; esperaMs: number }
   | { tipo: "imagem" | "video"; url: string; legenda: string; esperaMs: number }
   | { tipo: "audio"; url: string; esperaMs: number }
-  | { tipo: "arquivo"; url: string; nome: string; esperaMs: number };
+  | { tipo: "arquivo"; url: string; nome: string; esperaMs: number }
+  /** mensagem com botão nativo "Copiar código" (Evolution sendButtons) */
+  | { tipo: "botao_copiar"; titulo: string; texto: string; codigo: string; rotulo: string; rodape?: string; esperaMs: number };
 
 export type PatchContato = Partial<Omit<Contato, "id" | "dono_id" | "telefone" | "simulacao">>;
 
@@ -473,7 +475,26 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         // gateway de link (LivePix): a página tem o Pix copia e cola e o QR Code
         await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):\n${pix.link}`, esperaMs: 800 });
       } else {
-        await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: 800 });
+        let foiBotao = false;
+        if (cfg.botaoCopiar) {
+          // botão "📋 Copiar código Pix": o cliente toca e cola no banco (o código é o mesmo do gateway, a confirmação continua automática)
+          try {
+            await enviar(ctx, c, {
+              tipo: "botao_copiar",
+              titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
+              texto: cobrado.nome,
+              codigo: pix.copiaCola,
+              rotulo: "Copiar código Pix",
+              rodape: "Toque no botão, abra o app do banco e cole em Pix copia e cola",
+              esperaMs: 800,
+            });
+            foiBotao = true;
+          } catch (e) {
+            ctx.log?.(`botão do Pix falhou, mandando só o código: ${(e as Error).message}`);
+          }
+        }
+        // o código em texto vai sempre (ou como reserva, se o botão não aparecer no aparelho do cliente)
+        if (!foiBotao || cfg.codigoTambem !== false) await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: foiBotao ? 1200 : 800 });
       }
       await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix, bump: bump?.id ?? null } });
       await ctx.store.cancelarAgendamentos(c, ["pix_nao_pagou", "pix_expirou"]);

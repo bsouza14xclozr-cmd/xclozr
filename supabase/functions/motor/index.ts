@@ -584,7 +584,8 @@ async function evolution(req: Request, cfg: Record<string, string>) {
 
   // mensagem enviada pelo próprio celular: se não foi o robô, um humano assumiu → pausa o robô
   if (d.key?.fromMe) {
-    if (linha) {
+    // mensagem sem texto (botão, figurinha…) não indica que um humano assumiu
+    if (linha && texto.trim()) {
       const { data: ult } = await db
         .from("mensagens")
         .select("conteudo")

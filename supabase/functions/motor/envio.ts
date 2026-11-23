@@ -98,6 +98,7 @@ export async function tempoHumano(s: Saida): Promise<number> {
     return Math.min(MAX_DELAY_AUDIO, Math.max(3000, variar(d * 1000 + 800)));
   }
   if (s.tipo === "arquivo") return variar(3500);
+  if (s.tipo === "botao_copiar") return variar(2500);
   return variar(2500 + ("legenda" in s ? Math.min(6000, (s.legenda ?? "").length * 40) : 0));
 }
 
@@ -125,7 +126,17 @@ export function criarEnvioEvolution(db: SupabaseClient, cfg: Record<string, stri
 
       let rota: string;
       let corpo: Record<string, unknown>;
-      if (s.tipo === "texto") {
+      if (s.tipo === "botao_copiar") {
+        rota = `/message/sendButtons/${inst}`;
+        corpo = {
+          number: c.telefone,
+          title: s.titulo,
+          description: s.texto,
+          footer: s.rodape ?? "",
+          buttons: [{ type: "copy", displayText: s.rotulo, copyCode: s.codigo }],
+          delay,
+        };
+      } else if (s.tipo === "texto") {
         rota = `/message/sendText/${inst}`;
         corpo = { number: c.telefone, text: s.texto, delay };
       } else if (s.tipo === "audio") {

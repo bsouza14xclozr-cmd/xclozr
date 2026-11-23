@@ -304,7 +304,24 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
         await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):
 ${pix.link}`, esperaMs: 800 });
       } else {
-        await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: 800 });
+        let foiBotao = false;
+        if (cfg.botaoCopiar) {
+          try {
+            await enviar(ctx, c, {
+              tipo: "botao_copiar",
+              titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
+              texto: cobrado.nome,
+              codigo: pix.copiaCola,
+              rotulo: "Copiar código Pix",
+              rodape: "Toque no botão, abra o app do banco e cole em Pix copia e cola",
+              esperaMs: 800
+            });
+            foiBotao = true;
+          } catch (e) {
+            ctx.log?.(`botão do Pix falhou, mandando só o código: ${e.message}`);
+          }
+        }
+        if (!foiBotao || cfg.codigoTambem !== false) await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: foiBotao ? 1200 : 800 });
       }
       await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix, bump: bump?.id ?? null } });
       await ctx.store.cancelarAgendamentos(c, ["pix_nao_pagou", "pix_expirou"]);
@@ -1004,12 +1021,14 @@ function criarStore(db2, donoId) {
       await db2.from("execucoes_bloco").insert({ dono_id: donoId, funil_id: funilId, bloco_id: blocoId, contato_id: c.id, saida });
     },
     async registrarMensagemRobo(c, s) {
-      const conteudo = s.tipo === "texto" ? s.texto : "legenda" in s ? s.legenda : s.tipo === "arquivo" ? s.nome : null;
+      const conteudo = s.tipo === "texto" ? s.texto : s.tipo === "botao_copiar" ? `${s.titulo}
+${s.texto}
+[📋 ${s.rotulo}]` : "legenda" in s ? s.legenda : s.tipo === "arquivo" ? s.nome : null;
       await db2.from("mensagens").insert({
         dono_id: donoId,
         contato_id: c.id,
         autor: "robo",
-        tipo: s.tipo,
+        tipo: s.tipo === "botao_copiar" ? "texto" : s.tipo,
         conteudo,
         midia_url: "url" in s ? s.url : null
       });
@@ -1162,6 +1181,7 @@ async function tempoHumano(s) {
     return Math.min(MAX_DELAY_AUDIO, Math.max(3e3, variar(d2 * 1e3 + 800)));
   }
   if (s.tipo === "arquivo") return variar(3500);
+  if (s.tipo === "botao_copiar") return variar(2500);
   return variar(2500 + ("legenda" in s ? Math.min(6e3, (s.legenda ?? "").length * 40) : 0));
 }
 async function configMotor(db2) {
@@ -1184,7 +1204,17 @@ function criarEnvioEvolution(db2, cfg) {
       gasto += delay;
       let rota;
       let corpo;
-      if (s.tipo === "texto") {
+      if (s.tipo === "botao_copiar") {
+        rota = `/message/sendButtons/${inst}`;
+        corpo = {
+          number: c.telefone,
+          title: s.titulo,
+          description: s.texto,
+          footer: s.rodape ?? "",
+          buttons: [{ type: "copy", displayText: s.rotulo, copyCode: s.codigo }],
+          delay
+        };
+      } else if (s.tipo === "texto") {
         rota = `/message/sendText/${inst}`;
         corpo = { number: c.telefone, text: s.texto, delay };
       } else if (s.tipo === "audio") {
@@ -2166,7 +2196,7 @@ async function evolution(req, cfg) {
   const donoId = numero.dono_id;
   let { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("dono_id", donoId).eq("telefone", telefone).maybeSingle();
   if (d2.key?.fromMe) {
-    if (linha) {
+    if (linha && texto2.trim()) {
       const { data: ult } = await db.from("mensagens").select("conteudo").eq("contato_id", linha.id).in("autor", ["robo", "humano"]).gte("criado_em", new Date(Date.now() - 12e4).toISOString());
       const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto2.trim());
       if (!foiRobo) {
