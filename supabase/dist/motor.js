@@ -634,7 +634,7 @@ async function duvidaComPixAberto(ctx, c, funil, texto2) {
     const r = await ctx.ia(c, {
       ...base2,
       instrucoes: obj.contraEntrega ? `${base2.instrucoes}
-CONTRA ENTREGA: o cliente JÁ RECEBEU o produto aqui na conversa e combinou de pagar depois de conferir. O Pix JÁ FOI ENVIADO e está acima (código copia e cola). Não diga que vai gerar outro nem que o produto vai chegar. Responda a dúvida com gentileza e, se fizer sentido, lembre do combinado: é só copiar o código do Pix aí em cima. Nunca cobre de forma agressiva. Se disser que já pagou, agradeça e diga que a confirmação é automática.` : `${base2.instrucoes}
+CONTRA ENTREGA: o cliente JÁ RECEBEU o produto aqui na conversa e combinou de pagar depois de conferir. O Pix JÁ FOI ENVIADO e está acima (código copia e cola). Não diga que vai gerar outro nem que o produto vai chegar. Responda a dúvida com gentileza e lembre do combinado: é só copiar o código do Pix aí em cima e pagar agora, leva 1 minutinho. NUNCA dê prazo nem diga "quando puder", "sem pressa" ou que o Pix vale por dias: incentive a pagar agora, com carinho e sem ser agressivo. Se disser que já pagou, agradeça e diga que a confirmação é automática.` : `${base2.instrucoes}
 O Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não diga que vai gerar outro. Responda a dúvida e, se fizer sentido, lembre que é só copiar o código do Pix aí em cima e que o produto chega sozinho assim que o pagamento cair. Se disser que já pagou, diga que a confirmação é automática e chega em instantes.`,
       objetivo: "tirar a dúvida e o cliente pagar o Pix que já está na conversa"
     });
@@ -648,7 +648,7 @@ O Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não dig
     await enviarTexto(
       ctx,
       c,
-      obj.contraEntrega ? "O Pix está aqui em cima 👆 É só copiar o código e colar no app do banco quando puder, tá? Obrigado pela confiança 🙏" : "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌"
+      obj.contraEntrega ? "O Pix está aqui em cima 👆 É só copiar o código e colar no app do banco, leva 1 minutinho. Consegue fazer agora? 🙏" : "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌"
     );
 }
 
