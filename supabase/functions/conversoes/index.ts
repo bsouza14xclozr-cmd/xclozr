@@ -67,9 +67,27 @@ async function painel(req: Request) {
     const tk = token || atual?.token || "";
     if (pixel.length < 10) return json({ erro: "Cole o ID do Pixel (só números)." }, 400);
     if (tk.length < 30) return json({ erro: "Cole o token da API de Conversões." }, 400);
+    // 1º tenta ler o nome do Pixel. O token gerado na tela "API de Conversões" do Pixel
+    // normalmente só tem permissão para ENVIAR eventos (não para ler o Pixel) e o Meta
+    // responde "(#100) Missing Permission". Nesse caso valida enviando um evento de teste.
     const r = await fetch(`${GRAPH}/${pixel}?fields=id,name&access_token=${encodeURIComponent(tk)}`, { signal: AbortSignal.timeout(15_000) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j?.error) return json({ erro: `O Meta recusou: ${j?.error?.message ?? r.status}. Confira se o token foi gerado nesse mesmo Pixel.` }, 400);
+    let j = await r.json().catch(() => ({}));
+    if (!r.ok || j?.error) {
+      try {
+        await enviar({ dono_id: donoId, pixel_id: pixel, token: tk, test_code: "XCLOZR_VALIDACAO" }, [
+          {
+            event_name: "Lead",
+            event_time: Math.floor(Date.now() / 1000),
+            event_id: `validacao-${crypto.randomUUID()}`,
+            action_source: "chat",
+            user_data: await dadosCliente({ id: "validacao-xclozr", telefone: "5511999999999", nome: "Teste XClozr" }),
+          },
+        ]);
+        j = {};
+      } catch (e) {
+        return json({ erro: `O Meta recusou: ${(e as Error).message}. Confira se o token foi gerado nesse mesmo Pixel.` }, 400);
+      }
+    }
     const { error } = await db.from("capi_config").upsert({
       dono_id: donoId,
       pixel_id: pixel,
