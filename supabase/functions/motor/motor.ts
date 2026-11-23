@@ -286,7 +286,11 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
               ctx.log?.(`voz clonada falhou: ${(e as Error).message}`);
             }
             if (url) await enviar(ctx, c, { tipo: "audio", url, esperaMs: espera });
-            else await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs: espera });
+            else {
+              // sem áudio: manda escrito, sem as etiquetas de emoção ([risos]…)
+              const escrito = t.replace(/\[[^\]\n]{1,40}\]\s*/g, "").replace(/[ \t]{2,}/g, " ").trim();
+              if (escrito) await enviar(ctx, c, { tipo: "texto", texto: escrito, esperaMs: espera });
+            }
           }
         } else if (item.tipo === "arquivo" && item.url) {
           await enviar(ctx, c, { tipo: "arquivo", url: item.url, nome: item.nome || "arquivo", esperaMs: espera });

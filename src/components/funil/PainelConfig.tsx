@@ -261,12 +261,12 @@ function ItensMensagem({ id, valor, onChange }: { id: string; valor: ItemMensage
                 aria-label="Texto falado com a sua voz"
                 rows={3}
                 className={areaCls}
-                placeholder="Oi {nome}! Vi que você chamou aqui, já te explico tudinho, tá?"
+                placeholder="[warmly] Oi! Vi que você chamou aqui... já te explico tudinho, tá?"
                 value={item.texto}
                 onChange={(e) => set(i, { ...item, texto: e.target.value })}
               />
               <span className="text-[11px] text-suave">
-                O robô fala este texto com a sua voz clonada (menu Agente de IA → Minha voz) e manda como áudio. Com {"{nome}"} cada cliente recebe um áudio com o nome dele. Se a voz não estiver pronta, vai como texto.
+                O robô fala este texto com a sua voz clonada (menu Agente de IA → Minha voz) e manda como áudio. Com {"{nome}"} cada cliente recebe um áudio com o nome dele. Se a voz não estiver pronta, vai como texto. No modelo v4 dá pra pôr emoção entre colchetes: [warmly], [excited], [laughs softly], [sighs].
               </span>
             </>
           )}

@@ -148,7 +148,10 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
               ctx.log?.(`voz clonada falhou: ${e.message}`);
             }
             if (url) await enviar(ctx, c, { tipo: "audio", url, esperaMs: espera });
-            else await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs: espera });
+            else {
+              const escrito = t.replace(/\[[^\]\n]{1,40}\]\s*/g, "").replace(/[ \t]{2,}/g, " ").trim();
+              if (escrito) await enviar(ctx, c, { tipo: "texto", texto: escrito, esperaMs: espera });
+            }
           }
         } else if (item.tipo === "arquivo" && item.url) {
           await enviar(ctx, c, { tipo: "arquivo", url: item.url, nome: item.nome || "arquivo", esperaMs: espera });
@@ -1535,7 +1538,18 @@ async function processarDisparos(db2, cfg) {
 
 // supabase/functions/motor/voz.ts
 var API = "https://api.elevenlabs.io/v1";
-var MODELOS = { qualidade: "eleven_multilingual_v2", economia: "eleven_flash_v2_5" };
+var MODELOS = { natural: "eleven_v4", qualidade: "eleven_multilingual_v2", economia: "eleven_flash_v2_5" };
+function modeloValido(m) {
+  return m === "natural" || m === "economia" ? m : "qualidade";
+}
+var ETIQUETA = /\[[^\]\n]{1,40}\]\s*/g;
+function semEtiquetas(t) {
+  return t.replace(ETIQUETA, "").replace(/[ \t]{2,}/g, " ").trim();
+}
+function ajustes(modelo) {
+  if (modelo === MODELOS.natural) return { stability: 0.5, similarity_boost: 0.85, use_speaker_boost: true };
+  return { stability: 0.45, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true };
+}
 async function configVoz(db2, donoId) {
   const { data } = await db2.from("voz_config").select("apikey, voice_id, modelo").eq("dono_id", donoId).maybeSingle();
   return data ?? null;
@@ -1557,12 +1571,21 @@ function erroEleven(status, texto) {
   if (/can_not_use_instant_voice_cloning|subscription|upgrade|plan/i.test(msg)) return new Error(`Seu plano da ElevenLabs não permite clonar voz: precisa do Starter ou maior (${msg})`);
   return new Error(`ElevenLabs recusou (${status}): ${msg}`);
 }
-async function audioComVoz(db2, donoId, texto, cfg) {
-  const t = texto.trim().slice(0, 2500);
-  if (!t) return null;
+async function audioComVoz(db2, donoId, texto, cfg, forcarModelo) {
   const c = cfg ?? await configVoz(db2, donoId);
   if (!c?.apikey || !c.voice_id) return null;
-  const modelo = MODELOS[c.modelo ?? "qualidade"] ?? MODELOS.qualidade;
+  const escolhido = forcarModelo ?? modeloValido(c.modelo);
+  try {
+    return await gerar(db2, donoId, c, texto, escolhido);
+  } catch (e) {
+    if (escolhido !== "natural" || forcarModelo || /chave de API|créditos|plano/i.test(e.message)) throw e;
+    return await gerar(db2, donoId, c, texto, "qualidade");
+  }
+}
+async function gerar(db2, donoId, c, texto, chave) {
+  const modelo = MODELOS[chave];
+  const t = (chave === "natural" ? texto.trim() : semEtiquetas(texto)).slice(0, 2500);
+  if (!semEtiquetas(t)) return null;
   const nome = `${await sha(`${c.voice_id}|${modelo}|${t}`)}.mp3`;
   const caminho = `${donoId}/${nome}`;
   const publica = db2.storage.from("voz").getPublicUrl(caminho).data.publicUrl;
@@ -1575,9 +1598,9 @@ async function audioComVoz(db2, donoId, texto, cfg) {
       text: t,
       model_id: modelo,
       language_code: modelo === MODELOS.economia ? "pt" : void 0,
-      voice_settings: { stability: 0.45, similarity_boost: 0.85, style: 0.15, use_speaker_boost: true }
+      voice_settings: ajustes(modelo)
     }),
-    signal: AbortSignal.timeout(45e3)
+    signal: AbortSignal.timeout(6e4)
   });
   if (!r.ok) throw erroEleven(r.status, await r.text());
   const bytes = new Uint8Array(await r.arrayBuffer());

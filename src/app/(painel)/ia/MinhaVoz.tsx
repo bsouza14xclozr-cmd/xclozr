@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-type Status = { conectado: boolean; voz_pronta?: boolean; voz_nome?: string | null; modelo?: "qualidade" | "economia"; plano?: string | null; erro?: string | null };
+type Modelo = "natural" | "qualidade" | "economia";
+type Status = { conectado: boolean; voz_pronta?: boolean; voz_nome?: string | null; modelo?: Modelo; plano?: string | null; erro?: string | null };
 
 const inputCls =
   "w-full min-h-11 rounded-[10px] border border-borda bg-fundo px-3 text-sm text-texto placeholder:text-suave/70 focus:border-limao focus:outline-none";
@@ -44,7 +45,8 @@ export function MinhaVoz() {
   const [consentimento, setConsentimento] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [previa, setPrevia] = useState<string | null>(null);
-  const [textoPrevia, setTextoPrevia] = useState("Oi! Tudo bem? Vi que você chamou aqui, já te explico tudinho, tá?");
+  const [textoPrevia, setTextoPrevia] = useState("[warmly] Oi! Tudo bem? Vi que você chamou aqui... [laughs softly] já te explico tudinho, tá?");
+  const [lado, setLado] = useState<{ natural: string; classica: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const gravador = useRef<MediaRecorder | null>(null);
   const pedacos = useRef<Blob[]>([]);
@@ -168,6 +170,15 @@ export function MinhaVoz() {
     rodar("previa", async () => {
       const r = await chamar<{ url: string }>({ acao: "previa", texto: textoPrevia });
       setPrevia(`${r.url}?t=${Date.now()}`);
+      setLado(null);
+    });
+
+  const comparar = () =>
+    rodar("comparar", async () => {
+      const r = await chamar<{ natural: string; classica: string }>({ acao: "previa", texto: textoPrevia, comparar: true });
+      const t = Date.now();
+      setLado({ natural: `${r.natural}?t=${t}`, classica: `${r.classica}?t=${t}` });
+      setPrevia(null);
     });
 
   const remover = () =>
@@ -179,7 +190,7 @@ export function MinhaVoz() {
       return "Voz apagada.";
     });
 
-  const trocarModelo = (modelo: "qualidade" | "economia") =>
+  const trocarModelo = (modelo: Modelo) =>
     rodar("modelo", async () => {
       await chamar({ acao: "modelo", modelo });
       setStatus((s) => (s ? { ...s, modelo } : s));
@@ -225,8 +236,9 @@ export function MinhaVoz() {
           </button>
           <label className="flex items-center gap-1.5">
             Qualidade:
-            <select className="min-h-8 rounded-lg border border-borda bg-fundo px-2 text-xs text-texto" value={status.modelo ?? "qualidade"} onChange={(e) => void trocarModelo(e.target.value as "qualidade" | "economia")}>
-              <option value="qualidade">Mais natural</option>
+            <select className="min-h-8 rounded-lg border border-borda bg-fundo px-2 text-xs text-texto" value={status.modelo ?? "qualidade"} onChange={(e) => void trocarModelo(e.target.value as Modelo)}>
+              <option value="natural">Mais humana (v4, com emoção)</option>
+              <option value="qualidade">Clássica (v2)</option>
               <option value="economia">Econômica (metade dos créditos)</option>
             </select>
           </label>
@@ -305,11 +317,32 @@ export function MinhaVoz() {
             <button type="button" onClick={() => void ouvir()} disabled={ocupado !== null} className="min-h-10 rounded-[10px] border border-limao/50 px-4 text-sm font-semibold text-limao hover:bg-limao/10 disabled:opacity-60">
               {ocupado === "previa" ? "Gerando…" : "▶ Ouvir com minha voz"}
             </button>
+            <button type="button" onClick={() => void comparar()} disabled={ocupado !== null} className="min-h-10 rounded-[10px] border border-borda px-4 text-sm font-semibold text-texto hover:border-limao/50 disabled:opacity-60">
+              {ocupado === "comparar" ? "Gerando os dois…" : "⚖️ Comparar v4 × v2"}
+            </button>
             <button type="button" onClick={() => void remover()} disabled={ocupado !== null} className="min-h-10 rounded-[10px] px-3 text-xs text-suave hover:text-vermelho">
               Apagar minha voz
             </button>
           </div>
           {previa && <audio key={previa} src={previa} controls autoPlay className="w-full" />}
+          {lado && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {([["natural", "Mais humana (v4)"], ["classica", "Clássica (v2)"]] as const).map(([k, rotulo]) => (
+                <div key={k} className="flex flex-col gap-1.5 rounded-lg border border-borda p-3">
+                  <span className="text-xs font-semibold">{rotulo}</span>
+                  <audio src={lado[k]} controls className="w-full" />
+                  <button type="button" disabled={ocupado !== null || status.modelo === (k === "natural" ? "natural" : "qualidade")} onClick={() => void trocarModelo(k === "natural" ? "natural" : "qualidade")} className="self-start text-xs text-limao hover:underline disabled:text-suave disabled:no-underline">
+                    {status.modelo === (k === "natural" ? "natural" : "qualidade") ? "✓ Em uso nos funis" : "Usar esta nos funis"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <span className="text-[11px] text-suave">
+            Dica do v4: escreva como você fala (“olha”, “né”, “tá”, reticências pra pausa, preço por extenso) e use etiquetas entre colchetes para emoção:{" "}
+            <code className="text-texto">[warmly]</code> carinhoso, <code className="text-texto">[excited]</code> animado, <code className="text-texto">[laughs softly]</code> risadinha,{" "}
+            <code className="text-texto">[sighs]</code> suspiro, <code className="text-texto">[whispers]</code> cochicho. Nos outros modelos as etiquetas são ignoradas.
+          </span>
           <span className="text-[11px] text-suave">Cada texto novo gasta créditos da ElevenLabs uma vez; textos repetidos reaproveitam o áudio. Com {"{nome}"} no funil, cada cliente gera um áudio.</span>
         </div>
       )}

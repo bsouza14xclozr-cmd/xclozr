@@ -4,7 +4,7 @@
 //   POST /voz/clonar   (login) multipart: audio + consentimento=sim
 // A chave da ElevenLabs entra aqui e nunca volta para o navegador.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { audioComVoz, erroEleven, type ConfigVoz } from "../motor/voz.ts";
+import { audioComVoz, erroEleven, modeloValido, type ConfigVoz } from "../motor/voz.ts";
 
 const API = "https://api.elevenlabs.io/v1";
 const db: SupabaseClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -40,7 +40,7 @@ async function painel(req: Request, donoId: string) {
 
   if (acao === "chave") {
     const apikey = String(corpo.apikey ?? "").trim() || cfg?.apikey || "";
-    const modelo = corpo.modelo === "economia" ? "economia" : "qualidade";
+    const modelo = modeloValido(corpo.modelo);
     if (apikey.length < 20) return json({ erro: "Cole a chave de API da ElevenLabs." }, 400);
     const r = await fetch(`${API}/user/subscription`, { headers: { "xi-api-key": apikey }, signal: AbortSignal.timeout(15_000) });
     const texto = await r.text();
@@ -69,6 +69,11 @@ async function painel(req: Request, donoId: string) {
     if (!cfg.voice_id) return json({ erro: "Clone sua voz primeiro." }, 400);
     const texto = String(corpo.texto ?? "").trim().slice(0, 400) || "Oi! Tudo bem? Vi que você chamou aqui, já te explico tudinho, tá?";
     try {
+      if (corpo.comparar) {
+        // mesmo texto nos dois modelos, para ouvir lado a lado
+        const [natural, classica] = await Promise.all([audioComVoz(db, donoId, texto, cfg, "natural"), audioComVoz(db, donoId, texto, cfg, "qualidade")]);
+        return json({ ok: true, url: natural, natural, classica });
+      }
       const url = await audioComVoz(db, donoId, texto, cfg);
       return json({ ok: true, url });
     } catch (e) {
@@ -83,7 +88,7 @@ async function painel(req: Request, donoId: string) {
   }
 
   if (acao === "modelo") {
-    const modelo = corpo.modelo === "economia" ? "economia" : "qualidade";
+    const modelo = modeloValido(corpo.modelo);
     await db.from("voz_config").update({ modelo, atualizado_em: new Date().toISOString() }).eq("dono_id", donoId);
     return json({ ok: true, modelo });
   }
