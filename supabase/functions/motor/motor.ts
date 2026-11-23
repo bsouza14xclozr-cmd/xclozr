@@ -860,7 +860,9 @@ async function duvidaComPixAberto(ctx: Ctx, c: Contato, funil: Funil, texto: str
     const base = configIAObjecoes(obj);
     const r = await ctx.ia(c, {
       ...base,
-      instrucoes: `${base.instrucoes}\nO Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não diga que vai gerar outro. Responda a dúvida e, se fizer sentido, lembre que é só copiar o código do Pix aí em cima e que o produto chega sozinho assim que o pagamento cair. Se disser que já pagou, diga que a confirmação é automática e chega em instantes.`,
+      instrucoes: obj.contraEntrega
+        ? `${base.instrucoes}\nCONTRA ENTREGA: o cliente JÁ RECEBEU o produto aqui na conversa e combinou de pagar depois de conferir. O Pix JÁ FOI ENVIADO e está acima (código copia e cola). Não diga que vai gerar outro nem que o produto vai chegar. Responda a dúvida com gentileza e, se fizer sentido, lembre do combinado: é só copiar o código do Pix aí em cima. Nunca cobre de forma agressiva. Se disser que já pagou, agradeça e diga que a confirmação é automática.`
+        : `${base.instrucoes}\nO Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não diga que vai gerar outro. Responda a dúvida e, se fizer sentido, lembre que é só copiar o código do Pix aí em cima e que o produto chega sozinho assim que o pagamento cair. Se disser que já pagou, diga que a confirmação é automática e chega em instantes.`,
       objetivo: "tirar a dúvida e o cliente pagar o Pix que já está na conversa",
     });
     if (!("erro" in r)) {
@@ -869,5 +871,12 @@ async function duvidaComPixAberto(ctx: Ctx, c: Contato, funil: Funil, texto: str
     }
     ctx.log?.(`IA com Pix aberto falhou: ${r.erro}`);
   }
-  if (usos === 0) await enviarTexto(ctx, c, "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌");
+  if (usos === 0)
+    await enviarTexto(
+      ctx,
+      c,
+      obj.contraEntrega
+        ? "O Pix está aqui em cima 👆 É só copiar o código e colar no app do banco quando puder, tá? Obrigado pela confiança 🙏"
+        : "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌",
+    );
 }

@@ -91,6 +91,7 @@ var CORS = {
 var json = (d, status = 200) => new Response(JSON.stringify(d), { status, headers: { ...CORS, "content-type": "application/json" } });
 var TITULO = {
   venda: "Venda aprovada!",
+  lead: "💬 Novo lead!",
   chip: "📵 Chip desconectado",
   humano: "🙋 Cliente chamando você",
   funil: "⚠️ Problema no funil",
@@ -98,7 +99,7 @@ var TITULO = {
   resumo: "📊 Resumo do dia",
   info: "🔔 XClozr"
 };
-var TIPOS_PADRAO = ["venda", "chip", "humano", "funil", "trafego", "resumo", "info"];
+var TIPOS_PADRAO = ["venda", "lead", "chip", "humano", "funil", "trafego", "resumo", "info"];
 var cacheVapid = null;
 async function vapid() {
   if (cacheVapid) return cacheVapid;

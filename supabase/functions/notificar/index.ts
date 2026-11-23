@@ -19,6 +19,7 @@ const json = (d: unknown, status = 200) => new Response(JSON.stringify(d), { sta
 
 const TITULO: Record<string, string> = {
   venda: "Venda aprovada!",
+  lead: "💬 Novo lead!",
   chip: "📵 Chip desconectado",
   humano: "🙋 Cliente chamando você",
   funil: "⚠️ Problema no funil",
@@ -26,7 +27,7 @@ const TITULO: Record<string, string> = {
   resumo: "📊 Resumo do dia",
   info: "🔔 XClozr",
 };
-const TIPOS_PADRAO = ["venda", "chip", "humano", "funil", "trafego", "resumo", "info"];
+const TIPOS_PADRAO = ["venda", "lead", "chip", "humano", "funil", "trafego", "resumo", "info"];
 
 let cacheVapid: ChavesVapid | null = null;
 async function vapid(): Promise<ChavesVapid> {

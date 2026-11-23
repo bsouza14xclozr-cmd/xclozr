@@ -154,6 +154,13 @@ export function ConversasCliente() {
   }, [carregarLista]);
 
   useEffect(() => {
+    // link da notificação de lead novo: /conversas?c=<contato>
+    const c = new URLSearchParams(window.location.search).get("c");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- conversa vinda do link
+    if (c) setSelecionado(c);
+  }, []);
+
+  useEffect(() => {
     selRef.current = selecionado;
     if (selecionado) void carregarThread(selecionado);
   }, [selecionado, carregarThread]);

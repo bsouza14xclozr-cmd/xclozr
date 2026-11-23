@@ -9,20 +9,20 @@ function normalizar(s) {
 function palavras(lista) {
   return (lista ?? "").split(",").map((p) => normalizar(p)).filter(Boolean);
 }
-function contemAlguma(texto, lista) {
-  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ")} `;
+function contemAlguma(texto2, lista) {
+  const t = ` ${normalizar(texto2).replace(/[^\p{L}\p{N}\s]/gu, " ")} `;
   return lista.some((p) => t.includes(` ${p} `) || p.includes(" ") && t.includes(p));
 }
-function negou(texto) {
-  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ")} `;
+function negou(texto2) {
+  const t = ` ${normalizar(texto2).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ")} `;
   return / (nao|naum|naon|nao quero|n|nem|nunca|jamais|dispenso|sem interesse) /.test(t);
 }
-function querInformacao(texto) {
-  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s?]/gu, " ").replace(/\s+/g, " ")} `;
+function querInformacao(texto2) {
+  const t = ` ${normalizar(texto2).replace(/[^\p{L}\p{N}\s?]/gu, " ").replace(/\s+/g, " ")} `;
   return /\?/.test(t) || / (quero|queria|gostaria de|preciso) (saber|entender|ver|conhecer|mais informac|informac|detalhes)/.test(t) || / (como funciona|o que vem|o que e|mais info|me explica|explica melhor) /.test(t);
 }
-function ehReacao(texto) {
-  const t = normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+function ehReacao(texto2) {
+  const t = normalizar(texto2).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   if (!t) return true;
   return /^(amem|amen|amem amem|gloria( a deus)?|aleluia|deus (e bom|abencoe|te abencoe)|obrigad[oa]|obg|valeu|vlw|isso|isso mesmo|show|top|legal|entendi|ah ta|ata|blz|beleza|massa|perfeito|otimo|ok ok|kk+|haha+|rs+|hum+|hmm+)( [a-z]+)?$/.test(t);
 }
@@ -38,7 +38,7 @@ function primeiroNome(n) {
   if (!/\s/.test(bruto) && p.length > 12) return "";
   return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
-function preencher(texto, c, extra = {}) {
+function preencher(texto2, c, extra = {}) {
   const vars = {
     ...c.campos,
     nome: primeiroNome(c.nome) || primeiroNome(c.campos.nome ?? null) || "",
@@ -46,7 +46,7 @@ function preencher(texto, c, extra = {}) {
     telefone: c.telefone,
     ...extra
   };
-  return (texto ?? "").replace(/\{([a-z0-9_]+)\}/gi, (m, k) => k.toLowerCase() in vars ? vars[k.toLowerCase()] : m).replace(/ {2,}/g, " ").replace(/[ \t]*,[ \t]*([!?.])/g, "$1").replace(/(^|\n)[ \t]*,[ \t]*(\p{L})/gu, (_m, ini, l) => ini + l.toUpperCase());
+  return (texto2 ?? "").replace(/\{([a-z0-9_]+)\}/gi, (m, k) => k.toLowerCase() in vars ? vars[k.toLowerCase()] : m).replace(/ {2,}/g, " ").replace(/[ \t]*,[ \t]*([!?.])/g, "$1").replace(/(^|\n)[ \t]*,[ \t]*(\p{L})/gu, (_m, ini, l) => ini + l.toUpperCase());
 }
 function token() {
   return Math.random().toString(36).slice(2, 10);
@@ -55,8 +55,8 @@ function minutos(n, padrao) {
   const v = Number(n);
   return Number.isFinite(v) && v > 0 ? v : padrao;
 }
-function addMin(d, min) {
-  return new Date(d.getTime() + min * 6e4);
+function addMin(d2, min) {
+  return new Date(d2.getTime() + min * 6e4);
 }
 function no(f, id) {
   return f.grafo.nodes.find((n) => n.id === id) ?? null;
@@ -77,12 +77,12 @@ async function enviar(ctx, c, s) {
   await ctx.envio.enviar(c, s);
   await ctx.store.registrarMensagemRobo(c, s);
 }
-async function enviarTexto(ctx, c, texto, esperaMs = 1500) {
-  const t = preencher(texto, c).trim();
+async function enviarTexto(ctx, c, texto2, esperaMs = 1500) {
+  const t = preencher(texto2, c).trim();
   if (t) await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs });
 }
-async function enviarRespostaIA(ctx, c, texto, dividir) {
-  const partes = dividir ? texto.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 4) : [texto.trim()];
+async function enviarRespostaIA(ctx, c, texto2, dividir) {
+  const partes = dividir ? texto2.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 4) : [texto2.trim()];
   for (const p of partes) await enviar(ctx, c, { tipo: "texto", texto: p, esperaMs: Math.min(6e3, 900 + p.length * 35) });
 }
 async function iniciar(ctx, c, funil) {
@@ -316,8 +316,8 @@ ${pix.link}`, esperaMs: 800 });
     }
     case "entregar": {
       const produto = cfg.produtoId ? await ctx.store.produto(String(cfg.produtoId)) : null;
-      const texto = cfg.texto || produto?.mensagem_entrega || "Pagamento confirmado! ✅";
-      await enviarTexto(ctx, c, preencher(texto, c, produto ? { produto: produto.nome, preco: brl(produto.preco_centavos) } : {}));
+      const texto2 = cfg.texto || produto?.mensagem_entrega || "Pagamento confirmado! ✅";
+      await enviarTexto(ctx, c, preencher(texto2, c, produto ? { produto: produto.nome, preco: brl(produto.preco_centavos) } : {}));
       if (produto?.entrega_conteudo) {
         if (produto.entrega_tipo === "arquivo") {
           await enviar(ctx, c, { tipo: "arquivo", url: produto.entrega_conteudo, nome: produto.nome, esperaMs: 1e3 });
@@ -395,7 +395,7 @@ async function avaliarRegra(ctx, c, r, ultimaMensagem) {
     case "dia_semana": {
       const dias = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
       const hoje = dias[diaBrasilia(ctx.store.agora())];
-      const lista = palavras(valor).map((d) => d.slice(0, 3));
+      const lista = palavras(valor).map((d2) => d2.slice(0, 3));
       const e = lista.includes(hoje);
       return r.operador === "nao_e" ? !e : e;
     }
@@ -420,14 +420,14 @@ function paraMin(hhmm) {
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2] ?? 0);
 }
-function horaBrasilia(d) {
-  const b = new Date(d.getTime() - 3 * 36e5);
+function horaBrasilia(d2) {
+  const b = new Date(d2.getTime() - 3 * 36e5);
   return b.getUTCHours() * 60 + b.getUTCMinutes();
 }
-function diaBrasilia(d) {
-  return new Date(d.getTime() - 3 * 36e5).getUTCDay();
+function diaBrasilia(d2) {
+  return new Date(d2.getTime() - 3 * 36e5).getUTCDay();
 }
-async function receberMensagem(ctx, c, funilPadrao, texto, op = {}) {
+async function receberMensagem(ctx, c, funilPadrao, texto2, op = {}) {
   if (!c.ja_respondeu && (c.bloco_atual || c.finalizado)) {
     await patch(ctx, c, { ja_respondeu: true });
     await evento(ctx, c, "respondeu");
@@ -450,7 +450,7 @@ async function receberMensagem(ctx, c, funilPadrao, texto, op = {}) {
   if (!funil) return;
   const ag = c.aguardando;
   if (!ag) {
-    if (c.pix_ativo && !op.atrasada) await duvidaComPixAberto(ctx, c, funil, texto);
+    if (c.pix_ativo && !op.atrasada) await duvidaComPixAberto(ctx, c, funil, texto2);
     return;
   }
   const n = no(funil, ag.bloco);
@@ -460,7 +460,7 @@ async function receberMensagem(ctx, c, funilPadrao, texto, op = {}) {
     await ctx.store.cancelarAgendamentos(c, ["timeout", "esperar"]);
     await ctx.store.registrarExecucao(c, funil.id, n.id, saida);
     await patch(ctx, c, { aguardando: null });
-    await executarDesde(ctx, c, funil, proximo(funil, n.id, saida), texto);
+    await executarDesde(ctx, c, funil, proximo(funil, n.id, saida), texto2);
   };
   const repetir = async (msg, extra = {}) => {
     await enviarTexto(ctx, c, msg);
@@ -469,7 +469,7 @@ async function receberMensagem(ctx, c, funilPadrao, texto, op = {}) {
   switch (ag.tipo) {
     case "pergunta": {
       const tipo = cfg.tipoResposta ?? "texto";
-      const t = texto.trim();
+      const t = texto2.trim();
       const valido = tipo === "qualquer" || tipo === "numero" && /\d/.test(t) || tipo === "email" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t) || tipo === "texto" && t.length > 0;
       if (valido) {
         if (cfg.salvarEm) {
@@ -485,27 +485,27 @@ async function receberMensagem(ctx, c, funilPadrao, texto, op = {}) {
     }
     case "menu": {
       const opcoes = cfg.opcoes ?? [];
-      const num = texto.match(/\d+/);
+      const num = texto2.match(/\d+/);
       let i = num ? Number(num[0]) - 1 : -1;
-      if (!(i >= 0 && i < opcoes.length)) i = opcoes.findIndex((o) => normalizar(texto).includes(normalizar(o)) && normalizar(o).length > 0);
-      if (i < 0) i = opcaoPorPalavra(texto, opcoes);
+      if (!(i >= 0 && i < opcoes.length)) i = opcoes.findIndex((o) => normalizar(texto2).includes(normalizar(o)) && normalizar(o).length > 0);
+      if (i < 0) i = opcaoPorPalavra(texto2, opcoes);
       if (i >= 0) return seguir(`opcao_${i}`);
       if (op.atrasada) return;
       if (ag.tentativas >= 1) return seguir("sem_resposta");
       const lista = opcoes.map((o, k) => `*${k + 1}.* ${o}`).join("\n");
-      return repetir(ehReacao(texto) ? `🙏 Só pra eu te mostrar o certo, me conta: é pra onde?
+      return repetir(ehReacao(texto2) ? `🙏 Só pra eu te mostrar o certo, me conta: é pra onde?
 
 ${lista}` : cfg.msgInvalida || `Me responde com o número da opção, tá? 🙂
 
 ${lista}`);
     }
     case "objecoes": {
-      const pergunta = querInformacao(texto);
-      if (!negou(texto) && !pergunta && contemAlguma(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
-      const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto, palavras(o.palavras)));
+      const pergunta = querInformacao(texto2);
+      if (!negou(texto2) && !pergunta && contemAlguma(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
+      const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto2, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
-      const reacao = ehReacao(texto);
-      if (op.atrasada && (reacao || normalizar(texto).length < 15)) return;
+      const reacao = ehReacao(texto2);
+      if (op.atrasada && (reacao || normalizar(texto2).length < 15)) return;
       if (reacao) {
         if (ag.reacoes) return;
         return repetir(cfg.msgReacao || "🙏🙏 Quer que eu já gere seu Pix pra você receber agora?", { reacoes: 1 });
@@ -524,7 +524,7 @@ ${lista}`);
       return;
     }
     case "upsell": {
-      const aceitou = !negou(texto) && contemAlguma(texto, palavras(cfg.palavrasSim));
+      const aceitou = !negou(texto2) && contemAlguma(texto2, palavras(cfg.palavrasSim));
       if (n.data.tipo === "orderbump" && aceitou && cfg.produtoId) await patch(ctx, c, { campos: { ...c.campos, __bump: String(cfg.produtoId) } });
       return seguir(aceitou ? "aceitou" : "recusou");
     }
@@ -601,8 +601,8 @@ async function pixPago(ctx, c, pagamentoId) {
   await executarDesde(ctx, c, funil, proximo(funil, ativo.bloco, "pagou"), "");
 }
 var PALAVRAS_VAZIAS = /* @__PURE__ */ new Set(["na", "no", "em", "de", "do", "da", "pra", "para", "com", "o", "a", "os", "as", "um", "uma", "e", "ou", "meu", "minha"]);
-function opcaoPorPalavra(texto, opcoes) {
-  const t = ` ${normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ")} `;
+function opcaoPorPalavra(texto2, opcoes) {
+  const t = ` ${normalizar(texto2).replace(/[^\p{L}\p{N}\s]/gu, " ")} `;
   const achadas = opcoes.map((o, i) => ({ i, hits: normalizar(o).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length >= 4 && !PALAVRAS_VAZIAS.has(w)).filter((w) => t.includes(` ${w} `) || t.includes(` ${w.slice(0, -1)} `)).length })).filter((x) => x.hits > 0).sort((a, b) => b.hits - a.hits);
   return achadas.length && (achadas.length === 1 || achadas[0].hits > achadas[1].hits) ? achadas[0].i : -1;
 }
@@ -618,13 +618,13 @@ function configIAObjecoes(cfg) {
     objetivo: "o cliente dizer que quer comprar ou pedir o Pix"
   };
 }
-async function duvidaComPixAberto(ctx, c, funil, texto) {
-  if (ehReacao(texto)) return;
+async function duvidaComPixAberto(ctx, c, funil, texto2) {
+  if (ehReacao(texto2)) return;
   const usos = Number(c.campos.__ia_pix ?? 0);
   if (usos >= 6) return;
   await patch(ctx, c, { campos: { ...c.campos, __ia_pix: String(usos + 1) } });
   const obj = funil.grafo.nodes.find((n) => n.data.tipo === "objecoes")?.data.config ?? {};
-  const resposta = (obj.objecoes ?? []).find((o) => contemAlguma(texto, palavras(o.palavras)))?.resposta;
+  const resposta = (obj.objecoes ?? []).find((o) => contemAlguma(texto2, palavras(o.palavras)))?.resposta;
   if (resposta) {
     await enviarTexto(ctx, c, resposta.replace(/\s*Posso gerar seu Pix\??/i, " Seu Pix está aqui em cima 👆"));
     return;
@@ -633,7 +633,8 @@ async function duvidaComPixAberto(ctx, c, funil, texto) {
     const base2 = configIAObjecoes(obj);
     const r = await ctx.ia(c, {
       ...base2,
-      instrucoes: `${base2.instrucoes}
+      instrucoes: obj.contraEntrega ? `${base2.instrucoes}
+CONTRA ENTREGA: o cliente JÁ RECEBEU o produto aqui na conversa e combinou de pagar depois de conferir. O Pix JÁ FOI ENVIADO e está acima (código copia e cola). Não diga que vai gerar outro nem que o produto vai chegar. Responda a dúvida com gentileza e, se fizer sentido, lembre do combinado: é só copiar o código do Pix aí em cima. Nunca cobre de forma agressiva. Se disser que já pagou, agradeça e diga que a confirmação é automática.` : `${base2.instrucoes}
 O Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não diga que vai gerar outro. Responda a dúvida e, se fizer sentido, lembre que é só copiar o código do Pix aí em cima e que o produto chega sozinho assim que o pagamento cair. Se disser que já pagou, diga que a confirmação é automática e chega em instantes.`,
       objetivo: "tirar a dúvida e o cliente pagar o Pix que já está na conversa"
     });
@@ -643,7 +644,12 @@ O Pix JÁ FOI ENVIADO e está acima na conversa (código copia e cola). Não dig
     }
     ctx.log?.(`IA com Pix aberto falhou: ${r.erro}`);
   }
-  if (usos === 0) await enviarTexto(ctx, c, "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌");
+  if (usos === 0)
+    await enviarTexto(
+      ctx,
+      c,
+      obj.contraEntrega ? "O Pix está aqui em cima 👆 É só copiar o código e colar no app do banco quando puder, tá? Obrigado pela confiança 🙏" : "Seu Pix está aqui em cima 👆 É só copiar o código e colar no app do banco. Assim que cair, te mando tudo na hora 🙌"
+    );
 }
 
 // supabase/functions/motor/gateway.ts
@@ -662,14 +668,14 @@ async function chamar(cfg, metodo, caminho, corpo) {
     body: corpo ? JSON.stringify(corpo) : void 0,
     signal: AbortSignal.timeout(2e4)
   });
-  const texto = await r.text();
+  const texto2 = await r.text();
   let j = {};
   try {
-    j = JSON.parse(texto);
+    j = JSON.parse(texto2);
   } catch {
   }
   if (!r.ok) {
-    const msg = (j.error_messages?.map((e) => [e.code, e.parameter_name, e.description].filter(Boolean).join(": ")).join("; ") || texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).slice(0, 220);
+    const msg = (j.error_messages?.map((e) => [e.code, e.parameter_name, e.description].filter(Boolean).join(": ")).join("; ") || texto2.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).slice(0, 220);
     let explicacao = msg || "sem detalhes";
     if (r.status === 401) explicacao = `token inválido para o ambiente ${cfg.ambiente === "sandbox" ? "Sandbox" : "Produção"} (${msg || "UNAUTHORIZED"})`;
     else if (r.status === 403 && /whitelist|allowlist|access_denied|não autorizad/i.test(msg)) explicacao = `sua conta ainda não está liberada para gerar Pix pela API (${msg})`;
@@ -680,8 +686,8 @@ async function chamar(cfg, metodo, caminho, corpo) {
   return j;
 }
 function telefoneBR(tel) {
-  const d = (tel ?? "").replace(/\D/g, "");
-  const m = d.match(/^55(\d{2})(\d{8,9})$/);
+  const d2 = (tel ?? "").replace(/\D/g, "");
+  const m = d2.match(/^55(\d{2})(\d{8,9})$/);
   return m ? [{ country: "55", area: m[1], number: m[2], type: "MOBILE" }] : void 0;
 }
 async function criarPixPagBank(cfg, donoId, p) {
@@ -715,13 +721,13 @@ function credenciaisLivePix(cfg) {
   const i = cfg.token.indexOf(":");
   return { id: cfg.token.slice(0, i), segredo: cfg.token.slice(i + 1) };
 }
-function erroLivePix(status, texto) {
+function erroLivePix(status, texto2) {
   let j = {};
   try {
-    j = JSON.parse(texto);
+    j = JSON.parse(texto2);
   } catch {
   }
-  const msg = (j.error_description || j.message || j.error || texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "sem detalhes").slice(0, 220);
+  const msg = (j.error_description || j.message || j.error || texto2.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "sem detalhes").slice(0, 220);
   if (status === 401 || /invalid_client/i.test(msg)) return new Error(`LivePix recusou (${status}): Client ID ou Client Secret errado (${msg})`);
   if (status === 403) return new Error(`LivePix recusou (403): a aplicação não tem permissão para pagamentos — marque as permissões de pagamentos e webhooks na aplicação (${msg})`);
   if (status === 429) return new Error("LivePix pediu para esperar (muitas chamadas seguidas). Tente de novo em 1 minuto.");
@@ -735,16 +741,16 @@ async function tokenLivePix(db2, donoId, cfg, renovar = false) {
     const corpo = new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: segredo });
     if (escopo) corpo.set("scope", escopo);
     const r = await fetch(LP_TOKEN, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body: corpo, signal: AbortSignal.timeout(2e4) });
-    const texto = await r.text();
+    const texto2 = await r.text();
     if (r.ok) {
-      const j = JSON.parse(texto);
+      const j = JSON.parse(texto2);
       cfg.acesso_token = j.access_token;
       cfg.acesso_expira = new Date(Date.now() + (j.expires_in ?? 3600) * 1e3).toISOString();
       await db2.from("gateway_config").update({ acesso_token: cfg.acesso_token, acesso_expira: cfg.acesso_expira }).eq("dono_id", donoId).eq("gateway", "livepix");
       return j.access_token;
     }
-    ultimo = erroLivePix(r.status, texto);
-    if (!/scope/i.test(texto)) break;
+    ultimo = erroLivePix(r.status, texto2);
+    if (!/scope/i.test(texto2)) break;
   }
   throw ultimo ?? new Error("LivePix não devolveu o token");
 }
@@ -757,10 +763,10 @@ async function livePix(db2, donoId, cfg, metodo, caminho, corpo) {
       body: corpo ? JSON.stringify(corpo) : void 0,
       signal: AbortSignal.timeout(2e4)
     });
-    const texto = await r.text();
+    const texto2 = await r.text();
     if (r.status === 401 && tentativa === 0) continue;
-    if (!r.ok) throw erroLivePix(r.status, texto);
-    return texto ? JSON.parse(texto) : {};
+    if (!r.ok) throw erroLivePix(r.status, texto2);
+    return texto2 ? JSON.parse(texto2) : {};
   }
   throw new Error("LivePix recusou o token");
 }
@@ -805,14 +811,14 @@ async function asaas(cfg, metodo, caminho, corpo) {
     body: corpo ? JSON.stringify(corpo) : void 0,
     signal: AbortSignal.timeout(2e4)
   });
-  const texto = await r.text();
+  const texto2 = await r.text();
   let j = {};
   try {
-    j = JSON.parse(texto);
+    j = JSON.parse(texto2);
   } catch {
   }
   if (!r.ok) {
-    const msg = (j.errors?.map((e) => e.description || e.code).join("; ") || texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "sem detalhes").slice(0, 220);
+    const msg = (j.errors?.map((e) => e.description || e.code).join("; ") || texto2.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "sem detalhes").slice(0, 220);
     if (r.status === 401) throw new Error(`Asaas recusou (401): chave de API inválida para o ambiente ${cfg.ambiente === "sandbox" ? "Sandbox" : "Produção"} (${msg})`);
     throw new Error(`Asaas recusou (${r.status}): ${msg}`);
   }
@@ -1014,12 +1020,12 @@ function criarStore(db2, donoId) {
       const taxa = cfg ? Math.round(produto.preco_centavos * Number(cfg.taxa_percentual) / 100) + (cfg.taxa_fixa_centavos ?? 0) : 0;
       const gw = c.simulacao ? null : await configGateway(db2, donoId);
       if (!c.simulacao && !gw) throw new Error("nenhum gateway conectado (Produtos → Gateway de Pix)");
-      const { data: anuncio } = await db2.from("contatos").select("anuncio_id").eq("id", c.id).maybeSingle();
+      const { data: anuncio2 } = await db2.from("contatos").select("anuncio_id").eq("id", c.id).maybeSingle();
       const { data, error } = await db2.from("pagamentos").insert({
         dono_id: donoId,
         contato_id: c.id,
         produto_id: produto.id,
-        anuncio_id: anuncio?.anuncio_id ?? null,
+        anuncio_id: anuncio2?.anuncio_id ?? null,
         tipo,
         valor_centavos: produto.preco_centavos,
         taxa_centavos: taxa,
@@ -1071,8 +1077,8 @@ function criarStore(db2, donoId) {
     async marcarPixExpirado(id) {
       await db2.from("pagamentos").update({ status: "expirado" }).eq("id", id).eq("status", "pendente");
     },
-    async avisarDono(c, texto) {
-      await db2.from("avisos").insert({ dono_id: donoId, contato_id: c.id, texto });
+    async avisarDono(c, texto2) {
+      await db2.from("avisos").insert({ dono_id: donoId, contato_id: c.id, texto: texto2 });
     }
   };
 }
@@ -1151,9 +1157,9 @@ async function tempoHumano(s) {
     return Math.min(MAX_DELAY_TEXTO, variar(1800 + n * 55));
   }
   if (s.tipo === "audio") {
-    const d = await duracaoAudio(s.url);
-    if (!d) return 6e3;
-    return Math.min(MAX_DELAY_AUDIO, Math.max(3e3, variar(d * 1e3 + 800)));
+    const d2 = await duracaoAudio(s.url);
+    if (!d2) return 6e3;
+    return Math.min(MAX_DELAY_AUDIO, Math.max(3e3, variar(d2 * 1e3 + 800)));
   }
   if (s.tipo === "arquivo") return variar(3500);
   return variar(2500 + ("legenda" in s ? Math.min(6e3, (s.legenda ?? "").length * 40) : 0));
@@ -1218,12 +1224,12 @@ async function evo(cfg, metodo, rota, corpo) {
     body: corpo === void 0 ? void 0 : JSON.stringify(corpo),
     signal: AbortSignal.timeout(2e4)
   });
-  const texto = await r.text();
+  const texto2 = await r.text();
   let dados = null;
   try {
-    dados = JSON.parse(texto);
+    dados = JSON.parse(texto2);
   } catch {
-    dados = texto;
+    dados = texto2;
   }
   return { ok: r.ok, status: r.status, dados };
 }
@@ -1245,13 +1251,13 @@ async function definirWebhook(cfg, inst) {
   });
   return antigo.ok;
 }
-function qrDe(d) {
-  const b = d?.base64 ?? d?.qrcode?.base64 ?? null;
+function qrDe(d2) {
+  const b = d2?.base64 ?? d2?.qrcode?.base64 ?? null;
   if (!b || typeof b !== "string") return null;
   return b.startsWith("data:") ? b : `data:image/png;base64,${b}`;
 }
-function telefoneDe(d) {
-  const jid = d?.ownerJid ?? d?.owner ?? d?.instance?.owner ?? d?.instance?.wuid;
+function telefoneDe(d2) {
+  const jid = d2?.ownerJid ?? d2?.owner ?? d2?.instance?.owner ?? d2?.instance?.wuid;
   return jid ? jid.split("@")[0].split(":")[0] : null;
 }
 async function estadoEvolution(cfg, inst) {
@@ -1438,9 +1444,9 @@ ${m.texto}`;
     });
     const j2 = await r2.json().catch(() => ({}));
     if (!r2.ok) throw new Error(j2?.error?.message ?? `Claude ${r2.status}`);
-    const texto2 = (j2.content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    const texto3 = (j2.content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("");
     return {
-      texto: texto2,
+      texto: texto3,
       entrada: j2.usage?.input_tokens ?? 0,
       saida: j2.usage?.output_tokens ?? 0,
       cacheLeitura: j2.usage?.cache_read_input_tokens ?? 0,
@@ -1468,9 +1474,9 @@ ${m.texto}`;
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j?.error?.message ?? `Gemini ${r.status}`);
-  const texto = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+  const texto2 = (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
   const cache = j.usageMetadata?.cachedContentTokenCount ?? 0;
-  return { texto, entrada: (j.usageMetadata?.promptTokenCount ?? 0) - cache, saida: j.usageMetadata?.candidatesTokenCount ?? 0, cacheLeitura: cache, cacheEscrita: 0 };
+  return { texto: texto2, entrada: (j.usageMetadata?.promptTokenCount ?? 0) - cache, saida: j.usageMetadata?.candidatesTokenCount ?? 0, cacheLeitura: cache, cacheEscrita: 0 };
 }
 function montarSistema(c, b) {
   const nome = primeiroNome(c.nome) || primeiroNome(c.campos?.nome ?? null);
@@ -1547,8 +1553,8 @@ function spintax(t) {
   }
   return s;
 }
-function horaBrasilia2(d) {
-  return new Date(d.getTime() - 3 * 36e5).getUTCHours();
+function horaBrasilia2(d2) {
+  return new Date(d2.getTime() - 3 * 36e5).getUTCHours();
 }
 function proximaAbertura(agora, horaInicio) {
   const b = new Date(agora.getTime() - 3 * 36e5);
@@ -1560,8 +1566,8 @@ function inicioDoDiaBrasilia(agora) {
   const b = new Date(agora.getTime() - 3 * 36e5);
   return new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate(), 3));
 }
-function ehPedidoSair(texto) {
-  return PALAVRAS_SAIR.has(normalizar(texto).replace(/[^\p{L}\s]/gu, "").trim());
+function ehPedidoSair(texto2) {
+  return PALAVRAS_SAIR.has(normalizar(texto2).replace(/[^\p{L}\s]/gu, "").trim());
 }
 async function processarDisparos(db2, cfg) {
   const agora = /* @__PURE__ */ new Date();
@@ -1612,14 +1618,14 @@ async function processarDisparos(db2, cfg) {
     try {
       const envio = criarEnvioEvolution(db2, cfg);
       const rodape = cp.incluir_sair ? "\n\n_Se não quiser mais receber, responda SAIR._" : "";
-      const texto = (preencher(spintax(cp.mensagem ?? ""), c).trim() + rodape).trim();
+      const texto2 = (preencher(spintax(cp.mensagem ?? ""), c).trim() + rodape).trim();
       const saidas = [];
       if (cp.midia_url && (cp.midia_tipo === "imagem" || cp.midia_tipo === "video")) {
-        saidas.push({ tipo: cp.midia_tipo, url: cp.midia_url, legenda: texto, esperaMs: 2500 });
+        saidas.push({ tipo: cp.midia_tipo, url: cp.midia_url, legenda: texto2, esperaMs: 2500 });
       } else {
         if (cp.midia_url && cp.midia_tipo === "audio") saidas.push({ tipo: "audio", url: cp.midia_url, esperaMs: 3e3 });
         if (cp.midia_url && cp.midia_tipo === "arquivo") saidas.push({ tipo: "arquivo", url: cp.midia_url, nome: "arquivo", esperaMs: 2e3 });
-        if (texto) saidas.push({ tipo: "texto", texto, esperaMs: 2500 });
+        if (texto2) saidas.push({ tipo: "texto", texto: texto2, esperaMs: 2500 });
       }
       for (const s of saidas) {
         await envio.enviar(c, s);
@@ -1671,11 +1677,11 @@ async function sha(t) {
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
-function erroEleven(status, texto) {
-  let msg = texto;
+function erroEleven(status, texto2) {
+  let msg = texto2;
   try {
-    const j = JSON.parse(texto);
-    msg = j?.detail?.message ?? j?.detail?.status ?? (typeof j?.detail === "string" ? j.detail : "") ?? texto;
+    const j = JSON.parse(texto2);
+    msg = j?.detail?.message ?? j?.detail?.status ?? (typeof j?.detail === "string" ? j.detail : "") ?? texto2;
   } catch {
   }
   msg = String(msg || "sem detalhes").slice(0, 220);
@@ -1684,20 +1690,20 @@ function erroEleven(status, texto) {
   if (/can_not_use_instant_voice_cloning|subscription|upgrade|plan/i.test(msg)) return new Error(`Seu plano da ElevenLabs não permite clonar voz: precisa do Starter ou maior (${msg})`);
   return new Error(`ElevenLabs recusou (${status}): ${msg}`);
 }
-async function audioComVoz(db2, donoId, texto, cfg, forcarModelo) {
+async function audioComVoz(db2, donoId, texto2, cfg, forcarModelo) {
   const c = cfg ?? await configVoz(db2, donoId);
   if (!c?.apikey || !c.voice_id) return null;
   const escolhido = forcarModelo ?? modeloValido(c.modelo);
   try {
-    return await gerar(db2, donoId, c, texto, escolhido);
+    return await gerar(db2, donoId, c, texto2, escolhido);
   } catch (e) {
     if (escolhido !== "natural" || forcarModelo || /chave de API|créditos|plano/i.test(e.message)) throw e;
-    return await gerar(db2, donoId, c, texto, "qualidade");
+    return await gerar(db2, donoId, c, texto2, "qualidade");
   }
 }
-async function gerar(db2, donoId, c, texto, chave) {
+async function gerar(db2, donoId, c, texto2, chave) {
   const modelo = MODELOS[chave];
-  const t = (chave === "natural" ? texto.trim() : semEtiquetas(texto)).slice(0, 2500);
+  const t = (chave === "natural" ? texto2.trim() : semEtiquetas(texto2)).slice(0, 2500);
   if (!semEtiquetas(t)) return null;
   const nome = `${await sha(`${c.voice_id}|${modelo}|${t}`)}.mp3`;
   const caminho = `${donoId}/${nome}`;
@@ -1764,7 +1770,7 @@ function ctxPara(donoId, simulacao, cfg) {
     envio: simulacao ? envioSimulado : criarEnvioEvolution(db, cfg),
     log: (m) => console.log(`[motor ${donoId.slice(0, 6)}] ${m}`),
     ia: (c, cfgBloco) => responderIA(db, donoId, c, cfgBloco),
-    voz: (_c, texto) => audioComVoz(db, donoId, texto)
+    voz: (_c, texto2) => audioComVoz(db, donoId, texto2)
   };
 }
 async function rotaIA(req) {
@@ -1968,19 +1974,19 @@ async function enviarManual(req) {
   const donoId = await usuarioDoJwt(req);
   if (!donoId) return json({ erro: "não autenticado" }, 401);
   const corpo = await req.json().catch(() => ({}));
-  const texto = String(corpo.texto ?? "").trim().slice(0, 4e3);
-  if (!texto) return json({ erro: "mensagem vazia" }, 400);
+  const texto2 = String(corpo.texto ?? "").trim().slice(0, 4e3);
+  if (!texto2) return json({ erro: "mensagem vazia" }, 400);
   const { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("id", String(corpo.contato_id ?? "")).eq("dono_id", donoId).maybeSingle();
   if (!linha) return json({ erro: "conversa não encontrada" }, 404);
   const contato = linhaParaContato(linha);
   if (contato.simulacao) return json({ erro: "conversa de simulação" }, 400);
   const cfg = await configMotor(db);
   try {
-    await criarEnvioEvolution(db, cfg).enviar(contato, { tipo: "texto", texto, esperaMs: 0 });
+    await criarEnvioEvolution(db, cfg).enviar(contato, { tipo: "texto", texto: texto2, esperaMs: 0 });
   } catch (e) {
     return json({ erro: `Não consegui enviar: ${e.message}` }, 400);
   }
-  await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "humano", tipo: "texto", conteudo: texto });
+  await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "humano", tipo: "texto", conteudo: texto2 });
   const patch2 = { ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString() };
   if (corpo.pausar_robo !== false) patch2.robo_ativo = false;
   await db.from("contatos").update(patch2).eq("id", contato.id);
@@ -2009,15 +2015,28 @@ async function simular(req) {
     const { data: novo } = await db.from("contatos").insert({ dono_id: donoId, telefone, nome: null, simulacao: true, funil_id: funilId }).select(CAMPOS_CONTATO).single();
     linha = novo;
     await evento(ctx, linhaParaContato(linha), "novo_contato");
+    if (linha) {
+      const quem = primeiroNome(d.pushName ?? null) || `+${telefone}`;
+      const de = anuncio?.origem && typeof anuncio.origem.titulo === "string" ? ` · anúncio “${String(anuncio.origem.titulo).slice(0, 40)}”` : anuncio ? " · veio de anúncio" : "";
+      const trecho = texto.trim().slice(0, 90);
+      await db.from("avisos").insert({
+        dono_id: donoId,
+        tipo: "lead",
+        texto: `Novo lead: ${quem}${de}${trecho ? ` — “${trecho}”` : ""}`,
+        link: `/conversas?c=${linha.id}`,
+        push_titulo: "💬 Novo lead!",
+        push_corpo: `${quem} chamou no WhatsApp${de}${trecho ? `: “${trecho}”` : ""}`
+      }).then(({ error }) => error && console.error("aviso de lead", error.message));
+    }
   }
   const contato = linhaParaContato(linha);
   const inicio = new Date(Date.now() - 1e3).toISOString();
   const funil = await ctx.store.funil(funilId);
   if (acao === "mensagem") {
-    const texto = String(corpo.texto ?? "").slice(0, 2e3);
-    await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto });
+    const texto2 = String(corpo.texto ?? "").slice(0, 2e3);
+    await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto2 });
     await db.from("contatos").update({ ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", contato.id);
-    await receberMensagem(ctx, contato, async () => funil, texto);
+    await receberMensagem(ctx, contato, async () => funil, texto2);
   } else if (acao === "pagar") {
     if (contato.pix_ativo) {
       await db.from("pagamentos").update({ status: "pago", pago_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", contato.pix_ativo.pagamento_id);
@@ -2053,11 +2072,11 @@ function textoDaMensagem(m) {
   if (!m) return "";
   return m.conversation ?? m.extendedTextMessage?.text ?? m.imageMessage?.caption ?? m.videoMessage?.caption ?? m.buttonsResponseMessage?.selectedDisplayText ?? m.listResponseMessage?.title ?? (m.audioMessage ? "[áudio]" : m.imageMessage ? "[imagem]" : m.stickerMessage ? "[figurinha]" : m.documentMessage ? "[arquivo]" : "");
 }
-function anuncioDaMensagem(d) {
-  const m = d?.message ?? {};
-  const ctx = m.extendedTextMessage?.contextInfo ?? m.imageMessage?.contextInfo ?? m.videoMessage?.contextInfo ?? m.contextInfo ?? d?.contextInfo ?? null;
-  const ad = ctx?.externalAdReply ?? d?.contextInfo?.externalAdReply ?? null;
-  const ref = d?.adReferral ?? d?.referral ?? null;
+function anuncioDaMensagem(d2) {
+  const m = d2?.message ?? {};
+  const ctx = m.extendedTextMessage?.contextInfo ?? m.imageMessage?.contextInfo ?? m.videoMessage?.contextInfo ?? m.contextInfo ?? d2?.contextInfo ?? null;
+  const ad = ctx?.externalAdReply ?? d2?.contextInfo?.externalAdReply ?? null;
+  const ref = d2?.adReferral ?? d2?.referral ?? null;
   const id = ad?.sourceId ?? ref?.sourceId ?? ref?.source_id;
   if (!id) return null;
   if (ad?.sourceType && String(ad.sourceType).toLowerCase() !== "ad") return null;
@@ -2089,40 +2108,40 @@ async function evolution(req, cfg) {
     return json({ ok: true });
   }
   if (tipo !== "messages.upsert") return json({ ok: true });
-  const d = corpo.data ?? {};
-  const jid = d.key?.remoteJid ?? "";
+  const d2 = corpo.data ?? {};
+  const jid = d2.key?.remoteJid ?? "";
   if (!jid.endsWith("@s.whatsapp.net")) return json({ ok: true });
   const telefone = jid.split("@")[0];
-  const texto = textoDaMensagem(d.message);
+  const texto2 = textoDaMensagem(d2.message);
   const donoId = numero.dono_id;
   let { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("dono_id", donoId).eq("telefone", telefone).maybeSingle();
-  if (d.key?.fromMe) {
+  if (d2.key?.fromMe) {
     if (linha) {
       const { data: ult } = await db.from("mensagens").select("conteudo").eq("contato_id", linha.id).in("autor", ["robo", "humano"]).gte("criado_em", new Date(Date.now() - 12e4).toISOString());
-      const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto.trim());
+      const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto2.trim());
       if (!foiRobo) {
-        await db.from("mensagens").insert({ dono_id: donoId, contato_id: linha.id, autor: "humano", tipo: "texto", conteudo: texto, wa_id: d.key?.id });
+        await db.from("mensagens").insert({ dono_id: donoId, contato_id: linha.id, autor: "humano", tipo: "texto", conteudo: texto2, wa_id: d2.key?.id });
         await db.from("contatos").update({ robo_ativo: false }).eq("id", linha.id);
       }
     }
     return json({ ok: true });
   }
   const ctx = ctxPara(donoId, false, cfg);
-  const anuncio = anuncioDaMensagem(d);
-  if (linha && anuncio && linha.meta_ad_id !== anuncio.id) {
-    await db.from("contatos").update({ meta_ad_id: anuncio.id, ctwa_clid: anuncio.ctwa, origem: anuncio.origem }).eq("id", linha.id);
+  const anuncio2 = anuncioDaMensagem(d2);
+  if (linha && anuncio2 && linha.meta_ad_id !== anuncio2.id) {
+    await db.from("contatos").update({ meta_ad_id: anuncio2.id, ctwa_clid: anuncio2.ctwa, origem: anuncio2.origem }).eq("id", linha.id);
   }
   if (!linha) {
-    const { data: novo } = await db.from("contatos").insert({ dono_id: donoId, telefone, nome: d.pushName ?? null, numero_id: numero.id, ...anuncio ? { meta_ad_id: anuncio.id, ctwa_clid: anuncio.ctwa, origem: anuncio.origem } : {} }).select(CAMPOS_CONTATO).single();
+    const { data: novo } = await db.from("contatos").insert({ dono_id: donoId, telefone, nome: d2.pushName ?? null, numero_id: numero.id, ...anuncio2 ? { meta_ad_id: anuncio2.id, ctwa_clid: anuncio2.ctwa, origem: anuncio2.origem } : {} }).select(CAMPOS_CONTATO).single();
     linha = novo;
     await evento(ctx, linhaParaContato(linha), "novo_contato");
   }
   const contato = linhaParaContato(linha);
-  await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto, wa_id: d.key?.id });
+  await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto2, wa_id: d2.key?.id });
   await db.from("contatos").update({ ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString(), numero_id: numero.id }).eq("id", contato.id);
   const tresDias = new Date(Date.now() - 3 * 864e5).toISOString();
   await db.from("campanha_envios").update({ respondeu_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("contato_id", contato.id).eq("status", "enviado").is("respondeu_em", null).gte("enviado_em", tresDias);
-  if (ehPedidoSair(texto)) {
+  if (ehPedidoSair(texto2)) {
     const { count } = await db.from("campanha_envios").select("id", { count: "exact", head: true }).eq("contato_id", contato.id).eq("status", "enviado").gte("enviado_em", new Date(Date.now() - 7 * 864e5).toISOString());
     if (count) {
       if (!contato.etiquetas.includes(ETIQUETA_SAIR)) await db.from("contatos").update({ etiquetas: [...contato.etiquetas, ETIQUETA_SAIR] }).eq("id", contato.id);
@@ -2137,13 +2156,13 @@ async function evolution(req, cfg) {
     }
   }
   if (!await travar(contato.id)) {
-    await ctx.store.agendar(contato, "reprocessar", new Date(Date.now() + 3e3), { texto });
+    await ctx.store.agendar(contato, "reprocessar", new Date(Date.now() + 3e3), { texto: texto2 });
     return json({ ok: true, enfileirado: true });
   }
   const processar = (async () => {
     try {
       const atual = await carregarContato(contato.id);
-      await receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto);
+      await receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto2);
     } catch (e) {
       console.error("erro ao processar mensagem", e);
     } finally {

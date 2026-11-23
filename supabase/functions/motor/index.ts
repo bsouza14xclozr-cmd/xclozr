@@ -370,6 +370,23 @@ async function simular(req: Request) {
       .single();
     linha = novo;
     await M.evento(ctx, linhaParaContato(linha), "novo_contato");
+    // notificação de lead novo (vira push no celular se estiver ligada em "App e alertas")
+    if (linha) {
+      const quem = M.primeiroNome(d.pushName ?? null) || `+${telefone}`;
+      const de = anuncio?.origem && typeof (anuncio.origem as { titulo?: unknown }).titulo === "string" ? ` · anúncio “${String((anuncio.origem as { titulo: string }).titulo).slice(0, 40)}”` : anuncio ? " · veio de anúncio" : "";
+      const trecho = texto.trim().slice(0, 90);
+      await db
+        .from("avisos")
+        .insert({
+          dono_id: donoId,
+          tipo: "lead",
+          texto: `Novo lead: ${quem}${de}${trecho ? ` — “${trecho}”` : ""}`,
+          link: `/conversas?c=${linha.id}`,
+          push_titulo: "💬 Novo lead!",
+          push_corpo: `${quem} chamou no WhatsApp${de}${trecho ? `: “${trecho}”` : ""}`,
+        })
+        .then(({ error }) => error && console.error("aviso de lead", error.message));
+    }
   }
   const contato = linhaParaContato(linha);
   const inicio = new Date(Date.now() - 1000).toISOString();

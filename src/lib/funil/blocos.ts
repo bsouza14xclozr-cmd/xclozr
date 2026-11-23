@@ -330,6 +330,12 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
         dica: "A IA só usa o que estiver aqui: nunca inventa preço, prazo ou garantia.",
       },
       { tipo: "textarea", chave: "iaInstrucoes", rotulo: "Jeito de falar da IA (opcional)", placeholder: "Ex.: acolhedora, cristã, chama de irmão(ã), frases curtas" },
+      {
+        tipo: "booleano",
+        chave: "contraEntrega",
+        rotulo: "Funil de contra entrega (o cliente recebe antes e paga depois)",
+        dica: "Muda o jeito do robô falar com quem está com o Pix aberto: lembra do combinado em vez de dizer que o produto vai chegar.",
+      },
       { tipo: "textarea", chave: "naoEntendeu", rotulo: "Se não entender a mensagem (sem IA, vai uma vez só)", placeholder: "Posso te mandar o Pix agora?" },
       { tipo: "texto", chave: "msgReacao", rotulo: "Se responder só “amém”, “🙏”, “obrigado” (vai uma vez só)", placeholder: "🙏🙏 Quer que eu já gere seu Pix pra você receber agora?" },
       { tipo: "numero", chave: "esperarMin", rotulo: "Esperar resposta por", min: 1, sufixo: "minutos" },

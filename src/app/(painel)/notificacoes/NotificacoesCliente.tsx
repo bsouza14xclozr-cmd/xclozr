@@ -9,6 +9,7 @@ type Aparelho = { id: string; endpoint: string; aparelho: string | null; criado_
 
 const TIPOS: { id: string; nome: string; desc: string }[] = [
   { id: "venda", nome: "💰 Vendas", desc: "Cada Pix pago, na hora" },
+  { id: "lead", nome: "💬 Novo lead", desc: "Toda vez que uma pessoa nova chama no WhatsApp (com o anúncio de onde veio)" },
   { id: "chip", nome: "📵 Chip caiu", desc: "Quando um número desconecta ou é banido" },
   { id: "humano", nome: "🙋 Cliente chamando você", desc: "Quando o funil passa a conversa para você" },
   { id: "trafego", nome: "📈 Anúncios", desc: "Relatório do agente de tráfego, regras que pausaram/escalaram e token do Meta" },
