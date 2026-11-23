@@ -1404,6 +1404,32 @@ async function rotasNumeros(db2, donoId, corpo) {
   return { status: 400, dados: { erro: "ação desconhecida" } };
 }
 
+// supabase/functions/motor/entrada.ts
+function escolherFunil(funis, o) {
+  if (!funis.length) return null;
+  if (o.anuncio) {
+    const f = funis.find((x) => x.entrada?.anuncios?.includes(o.anuncio));
+    if (f) return { id: f.id, motivo: "anúncio" };
+  }
+  if (o.campanha) {
+    const f = funis.find((x) => x.entrada?.campanhas?.includes(o.campanha));
+    if (f) return { id: f.id, motivo: "campanha" };
+  }
+  const texto2 = (o.texto ?? "").trim();
+  if (texto2) {
+    let melhor = null;
+    for (const f of funis) {
+      const lista = palavras(f.entrada?.palavras);
+      if (!lista.length) continue;
+      const n = lista.filter((p) => contemAlguma(texto2, [p])).length;
+      if (n > 0 && (!melhor || n > melhor.n || n === melhor.n && f.padrao && !melhor.f.padrao)) melhor = { f, n };
+    }
+    if (melhor) return { id: melhor.f.id, motivo: "palavra-chave" };
+  }
+  const padrao = funis.find((x) => x.padrao) ?? funis[0];
+  return { id: padrao.id, motivo: "padrão" };
+}
+
 // supabase/functions/motor/ia.ts
 var MODELO_PADRAO = {
   openai: "gpt-5.4-mini",
@@ -1782,8 +1808,30 @@ async function carregarContato(id) {
   const { data } = await db.from("contatos").select(CAMPOS_CONTATO).eq("id", id).maybeSingle();
   return data ? linhaParaContato(data) : null;
 }
-async function funilPadraoDe(donoId, contato) {
+async function funilPadraoDe(donoId, contato, texto2) {
   const store = criarStore(db, donoId);
+  const [{ data: funis }, { data: ct }] = await Promise.all([
+    db.from("funis").select("id, padrao, entrada").eq("dono_id", donoId).eq("ativo", true).order("padrao", { ascending: false }).order("atualizado_em", { ascending: false }),
+    db.from("contatos").select("meta_ad_id").eq("id", contato.id).maybeSingle()
+  ]);
+  const anuncio2 = ct?.meta_ad_id ?? null;
+  let campanha = null;
+  if (anuncio2) {
+    const { data: ad } = await db.from("meta_anuncios").select("campanha_id").eq("dono_id", donoId).eq("id", anuncio2).maybeSingle();
+    campanha = ad?.campanha_id ?? null;
+  }
+  const lista = funis ?? [];
+  const temRegra = lista.some((f) => f.entrada?.anuncios?.length || f.entrada?.campanhas?.length || f.entrada?.palavras?.trim());
+  if (temRegra) {
+    const esc = escolherFunil(lista, { anuncio: anuncio2, campanha, texto: texto2 });
+    if (esc && esc.motivo !== "padrão") {
+      const f = await store.funil(esc.id);
+      if (f) {
+        console.log(`[motor ${donoId.slice(0, 6)}] funil escolhido por ${esc.motivo}`);
+        return f;
+      }
+    }
+  }
   if (contato.anuncio_codigo) {
     const { data: an } = await db.from("anuncios").select("funil_id").eq("dono_id", donoId).eq("codigo_rastreio", contato.anuncio_codigo).maybeSingle();
     if (an?.funil_id) {
@@ -1791,8 +1839,8 @@ async function funilPadraoDe(donoId, contato) {
       if (f) return f;
     }
   }
-  const { data } = await db.from("funis").select("id").eq("dono_id", donoId).eq("ativo", true).order("padrao", { ascending: false }).limit(1).maybeSingle();
-  return data ? store.funil(data.id) : null;
+  const padrao = lista.find((f) => f.padrao) ?? lista[0];
+  return padrao ? store.funil(padrao.id) : null;
 }
 function ctxPara(donoId, simulacao, cfg) {
   return {
@@ -2242,7 +2290,7 @@ async function evolution(req, cfg) {
   const processar = (async () => {
     try {
       const atual = await carregarContato(contato.id);
-      await receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual), texto2);
+      await receberMensagem(ctx, atual, () => funilPadraoDe(donoId, atual, texto2), texto2);
     } catch (e) {
       console.error("erro ao processar mensagem", e);
     } finally {
@@ -2279,7 +2327,7 @@ async function relogio(req, cfg) {
       if (a.tipo === "pix_pago") {
         await pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
       } else if (a.tipo === "reprocessar") {
-        await receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato), String(a.dados?.texto ?? ""), { atrasada: true });
+        await receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato, String(a.dados?.texto ?? "")), String(a.dados?.texto ?? ""), { atrasada: true });
       } else {
         await executarAgendamento(ctx, contato, a.tipo, a.dados ?? {});
       }

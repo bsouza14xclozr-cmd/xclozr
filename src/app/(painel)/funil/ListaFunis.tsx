@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { RegrasEntrada, resumoEntrada, type Entrada } from "./RegrasEntrada";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, EmptyState } from "@/components/ui";
@@ -18,7 +19,7 @@ async function referencias() {
   return { produtos: p.data ?? [], funis: f.data ?? [], colunas: c.data ?? [] };
 }
 
-type Funil = { id: string; nome: string; ativo: boolean; padrao: boolean; atualizado_em: string; grafo: { nodes?: unknown[] } };
+type Funil = { id: string; nome: string; ativo: boolean; padrao: boolean; atualizado_em: string; grafo: { nodes?: unknown[] }; entrada: Entrada | null };
 
 export function ListaFunis() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export function ListaFunis() {
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [confirmarApagar, setConfirmarApagar] = useState<string | null>(null);
+  const [regras, setRegras] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
   const [aviso, setAviso] = useState<{ id: string; nome: string; avisos: string[]; criados: string[] } | null>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
@@ -34,7 +36,7 @@ export function ListaFunis() {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("funis")
-      .select("id, nome, ativo, padrao, atualizado_em, grafo")
+      .select("id, nome, ativo, padrao, atualizado_em, grafo, entrada")
       .order("atualizado_em", { ascending: false });
     if (error) setErro("Não consegui carregar os funis.");
     else setFunis(data as Funil[]);
@@ -206,7 +208,17 @@ export function ListaFunis() {
                 <span className="text-xs text-suave">
                   {Math.max((f.grafo?.nodes?.length ?? 1) - 1, 0)} blocos · editado {new Date(f.atualizado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                 </span>
+                {resumoEntrada(f.entrada) && <span className="text-xs text-azul">🎯 {resumoEntrada(f.entrada)}</span>}
               </Link>
+              <button
+                type="button"
+                onClick={() => setRegras((r) => (r === f.id ? null : f.id))}
+                aria-expanded={regras === f.id}
+                className="min-h-9 rounded-lg px-2 text-xs text-suave hover:text-texto"
+                title="Quais conversas novas este funil atende (campanha do Meta ou palavras)"
+              >
+                🎯 Entrada
+              </button>
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${f.ativo ? "bg-limao-escuro text-limao" : "bg-elevado text-suave"}`}>
                 {f.ativo ? "Ativo" : "Pausado"}
               </span>
@@ -236,6 +248,17 @@ export function ListaFunis() {
                 <button type="button" onClick={() => setConfirmarApagar(f.id)} className="min-h-9 rounded-lg px-2 text-xs text-suave hover:text-vermelho">
                   Apagar
                 </button>
+              )}
+              {regras === f.id && (
+                <RegrasEntrada
+                  funil={f}
+                  outros={funis.filter((o) => o.id !== f.id)}
+                  onFechar={() => setRegras(null)}
+                  onSalvo={() => {
+                    setRegras(null);
+                    void carregar();
+                  }}
+                />
               )}
             </li>
           ))}
