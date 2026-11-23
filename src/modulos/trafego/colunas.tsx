@@ -113,7 +113,7 @@ export const COLUNAS: Coluna[] = [
   { id: "lucro_venda", nome: "Lucro por venda", desc: "Lucro ÷ vendas", grupo: "Dinheiro", valor: (s) => div(s.lucro, s.vendas), texto: fBrl, cor: (v) => sinal(v) },
 ];
 export const POR_ID = new Map(COLUNAS.map((c) => [c.id, c]));
-export const PADRAO = ["orcamento", "gasto", "conversas", "contatos", "pix", "vendas", "faturamento", "lucro", "roas", "roi", "cpa", "custo_contato", "conv_venda", "ctr", "cpc", "cpm"];
+export const PADRAO = ["orcamento", "vendas", "cpa", "gasto", "pix", "lucro", "custo_pix", "roas", "roi", "faturamento", "contatos", "custo_contato", "conv_venda", "ctr", "cpc", "cpm"];
 
 const CHAVE_LOCAL = "xclozr:colunas-anuncios";
 

@@ -6,6 +6,7 @@ import { Card, PageHeader } from "@/components/ui";
 import { brl, paraCentavos, paraInput } from "@/lib/dinheiro";
 import { AbaAgente, AbaRegras } from "./RegrasAgente";
 import { AbaConversoes } from "./Conversoes";
+import { ResumoTrafego } from "./Resumo";
 import { POR_ID, PersonalizarColunas, somaDe, somar, useColunas } from "./colunas";
 import { PERIODOS, chamarTrafego, intervaloDias, relatorio, type Linha, type Nivel, type Periodo, type StatusMeta } from "./api";
 
@@ -286,9 +287,11 @@ export function AnunciosCliente() {
   const [periodo, setPeriodo] = useState<Periodo>("hoje");
   const [conta, setConta] = useState<string>("");
   const [busca, setBusca] = useState("");
-  const [soAtivos, setSoAtivos] = useState(false);
-  const [filtroPai, setFiltroPai] = useState<{ nivel: "campanha" | "conjunto"; id: string; nome: string } | null>(null);
+  const [filtroStatus, setFiltroStatus] = useState<"" | "ativos" | "pausados">("");
+  const [sel, setSel] = useState<Record<Nivel, string[]>>({ campanha: [], conjunto: [], anuncio: [] });
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
+  const [campanhas, setCampanhas] = useState<Linha[] | null>(null);
+  const [emMassa, setEmMassa] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -306,7 +309,9 @@ export function AnunciosCliente() {
   const carregarDados = useCallback(async () => {
     const [ini, fim] = intervaloDias(periodo);
     try {
-      setLinhas(await relatorio(nivel, ini, fim, conta || null));
+      const [ls, cs] = await Promise.all([relatorio(nivel, ini, fim, conta || null), nivel === "campanha" ? null : relatorio("campanha", ini, fim, conta || null)]);
+      setLinhas(ls);
+      setCampanhas(cs ?? ls);
     } catch {
       setErro("Não consegui carregar o relatório.");
     }
@@ -352,7 +357,7 @@ export function AnunciosCliente() {
     }
   }
 
-  async function agir(l: Linha, tipo: "pausar" | "ativar" | "orcamento", valor?: number) {
+  async function agir(l: Linha, tipo: "pausar" | "ativar" | "orcamento", valor?: number, recarregar = true) {
     setErro(null);
     setOcupado(l.id);
     const antes = linhas;
@@ -363,7 +368,7 @@ export function AnunciosCliente() {
     );
     try {
       await chamarTrafego({ acao: "agir", nivel, id: l.id, tipo, valor_centavos: valor });
-      void carregarDados();
+      if (recarregar) void carregarDados();
     } catch (e) {
       setLinhas(antes);
       setErro(`${l.nome}: ${(e as Error).message}`);
@@ -372,15 +377,74 @@ export function AnunciosCliente() {
     }
   }
 
+  const passaStatus = useCallback((l: Linha) => !filtroStatus || (filtroStatus === "ativos" ? l.status === "ACTIVE" : l.status !== "ACTIVE"), [filtroStatus]);
+
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (linhas ?? []).filter(
-      (l) =>
-        (!q || l.nome.toLowerCase().includes(q)) &&
-        (!soAtivos || l.status === "ACTIVE") &&
-        (!filtroPai || (filtroPai.nivel === "campanha" ? l.campanha_id === filtroPai.id : l.conjunto_id === filtroPai.id)),
-    );
-  }, [linhas, busca, soAtivos, filtroPai]);
+    const sc = new Set(sel.campanha);
+    const sj = new Set(sel.conjunto);
+    return (linhas ?? []).filter((l) => {
+      if (q && !l.nome.toLowerCase().includes(q)) return false;
+      if (!passaStatus(l)) return false;
+      if (nivel === "conjunto" && sc.size && !sc.has(l.campanha_id)) return false;
+      if (nivel === "anuncio") {
+        if (sj.size) return sj.has(l.conjunto_id ?? "");
+        if (sc.size && !sc.has(l.campanha_id)) return false;
+      }
+      return true;
+    });
+  }, [linhas, busca, passaStatus, sel, nivel]);
+
+  /** Campanhas que entram no resumo: as marcadas (ou todas que passam nos filtros). */
+  const campanhasResumo = useMemo(() => {
+    const cs = campanhas ?? [];
+    if (sel.campanha.length) return cs.filter((c) => sel.campanha.includes(c.id));
+    const q = busca.trim().toLowerCase();
+    return cs.filter((c) => passaStatus(c) && (nivel !== "campanha" || !q || c.nome.toLowerCase().includes(q)));
+  }, [campanhas, sel.campanha, busca, passaStatus, nivel]);
+
+  const marcados = sel[nivel];
+  const todosMarcados = visiveis.length > 0 && visiveis.every((l) => marcados.includes(l.id));
+
+  function aplicarSelecao(x: Record<Nivel, string[]>, lista: string[]): Record<Nivel, string[]> {
+    // mudou as campanhas marcadas: os conjuntos/anúncios marcados de antes deixam de valer
+    if (nivel === "campanha") return { campanha: lista, conjunto: [], anuncio: [] };
+    if (nivel === "conjunto") return { ...x, conjunto: lista, anuncio: [] };
+    return { ...x, anuncio: lista };
+  }
+  function marcar(id: string, sim: boolean) {
+    setSel((x) => aplicarSelecao(x, sim ? [...new Set([...x[nivel], id])] : x[nivel].filter((i) => i !== id)));
+  }
+  function marcarTodos(sim: boolean) {
+    const ids = new Set(visiveis.map((l) => l.id));
+    setSel((x) => aplicarSelecao(x, sim ? [...new Set([...x[nivel], ...ids])] : x[nivel].filter((i) => !ids.has(i))));
+  }
+  function limpar(n: Nivel) {
+    setSel((x) => (n === "campanha" ? { campanha: [], conjunto: [], anuncio: [] } : n === "conjunto" ? { ...x, conjunto: [], anuncio: [] } : { ...x, anuncio: [] }));
+  }
+
+  async function emMassaAgir(tipo: "pausar" | "ativar") {
+    const alvo = visiveis.filter((l) => marcados.includes(l.id) && (tipo === "pausar" ? l.status === "ACTIVE" : l.status !== "ACTIVE"));
+    const nomeNivel = ABAS.find((a) => a.v === nivel)!.nome.toLowerCase();
+    if (!alvo.length) {
+      setErro(`Nenhum dos marcados está ${tipo === "pausar" ? "ativo" : "pausado"}.`);
+      return;
+    }
+    if (!window.confirm(`${tipo === "pausar" ? "Pausar" : "Ativar"} ${alvo.length} ${nomeNivel} no Meta?`)) return;
+    setEmMassa(true);
+    for (const l of alvo) await agir(l, tipo, undefined, false);
+    setEmMassa(false);
+    void carregarDados();
+  }
+
+  function linkGerenciador() {
+    const contaId = (conta || status?.escolhidas[0] || "").replace("act_", "");
+    const u = new URL(`https://adsmanager.facebook.com/adsmanager/manage/${nivel === "campanha" ? "campaigns" : nivel === "conjunto" ? "adsets" : "ads"}`);
+    if (contaId) u.searchParams.set("act", contaId);
+    if (sel.campanha.length) u.searchParams.set("selected_campaign_ids", sel.campanha.join(","));
+    if (sel.conjunto.length) u.searchParams.set("selected_adset_ids", sel.conjunto.join(","));
+    return u.toString();
+  }
 
   const total = useMemo(() => somar(visiveis), [visiveis]);
   const cols = useMemo(() => colunasIds.map((id) => POR_ID.get(id)).filter((c): c is NonNullable<typeof c> => Boolean(c)), [colunasIds]);
@@ -402,12 +466,13 @@ export function AnunciosCliente() {
     setOrdem((o) => (o?.id !== id ? { id, asc: false } : o.asc ? null : { id, asc: true }));
   }
 
+  /** Clicar no nome: marca só ele e abre o nível de baixo. */
   function abrir(l: Linha) {
     if (nivel === "campanha") {
-      setFiltroPai({ nivel: "campanha", id: l.id, nome: l.nome });
+      setSel({ campanha: [l.id], conjunto: [], anuncio: [] });
       setNivel("conjunto");
     } else if (nivel === "conjunto") {
-      setFiltroPai({ nivel: "conjunto", id: l.id, nome: l.nome });
+      setSel((x) => ({ ...x, conjunto: [l.id], anuncio: [] }));
       setNivel("anuncio");
     }
   }
@@ -418,25 +483,7 @@ export function AnunciosCliente() {
     <>
       <PageHeader
         title="Anúncios"
-        subtitle={status.conectado ? `Meta Ads de ${status.usuario ?? "sua conta"} · atualizado ${quando(status.ultimo_sync)}` : "Conecte o Meta Ads para ver gasto, vendas e lucro de cada anúncio"}
-        actions={
-          status.conectado &&
-          aba === "relatorio" && (
-            <>
-              <button
-                type="button"
-                onClick={sincronizar}
-                disabled={sincronizando}
-                className="min-h-11 rounded-[10px] border border-borda bg-cartao px-4 text-sm hover:bg-elevado disabled:opacity-60"
-              >
-                {sincronizando ? "Atualizando…" : "↻ Atualizar agora"}
-              </button>
-              <button type="button" onClick={() => setConfig((v) => !v)} className="min-h-11 rounded-[10px] border border-borda bg-cartao px-4 text-sm hover:bg-elevado">
-                ⚙ Configurar
-              </button>
-            </>
-          )
-        }
+        subtitle={status.conectado ? `Meta Ads de ${status.usuario ?? "sua conta"}` : "Conecte o Meta Ads para ver gasto, vendas e lucro de cada anúncio"}
       />
 
       <div className="flex flex-wrap gap-1 rounded-xl border border-borda bg-cartao p-1 self-start" role="tablist" aria-label="Seções de anúncios">
@@ -477,184 +524,248 @@ export function AnunciosCliente() {
       )}
 
       {aba === "relatorio" && status.conectado && (
-        <Card>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-[10px] border border-borda bg-fundo p-1" role="tablist" aria-label="Nível">
-              {ABAS.map((a) => (
-                <button
-                  key={a.v}
-                  type="button"
-                  role="tab"
-                  aria-selected={nivel === a.v}
-                  onClick={() => {
-                    setNivel(a.v);
-                    if (a.v === "campanha") setFiltroPai(null);
-                    if (a.v === "conjunto" && filtroPai?.nivel === "conjunto") setFiltroPai(null);
-                  }}
-                  className={`min-h-9 rounded-lg px-3 text-sm ${nivel === a.v ? "bg-elevado font-semibold text-texto" : "text-suave hover:text-texto"}`}
-                >
-                  {a.nome}
-                </button>
-              ))}
-            </div>
-            <div className="flex rounded-[10px] border border-borda bg-fundo p-1" role="group" aria-label="Período">
-              {PERIODOS.map((p) => (
-                <button
-                  key={p.v}
-                  type="button"
-                  aria-pressed={periodo === p.v}
-                  onClick={() => setPeriodo(p.v)}
-                  className={`min-h-9 rounded-lg px-3 text-sm ${periodo === p.v ? "bg-limao font-bold text-fundo" : "text-suave hover:text-texto"}`}
-                >
-                  {p.nome}
-                </button>
-              ))}
-            </div>
-            {status.escolhidas.length > 1 && (
-              <select aria-label="Conta" className="min-h-11 rounded-[10px] border border-borda bg-fundo px-3 text-sm" value={conta} onChange={(e) => setConta(e.target.value)}>
-                <option value="">Todas as contas</option>
-                {status.contas
-                  .filter((c) => status.escolhidas.includes(c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome}
-                    </option>
-                  ))}
-              </select>
+        <>
+          {/* Resumo */}
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-base font-semibold">Resumo</h2>
+            {sel.campanha.length > 0 && (
+              <span className="rounded-full bg-elevado px-2.5 py-0.5 text-xs text-suave">
+                das {sel.campanha.length} campanha{sel.campanha.length > 1 ? "s" : ""} marcada{sel.campanha.length > 1 ? "s" : ""}
+              </span>
             )}
-            <input
-              aria-label="Buscar por nome"
-              placeholder="Buscar por nome"
-              className="min-h-11 w-44 rounded-[10px] border border-borda bg-fundo px-3 text-sm"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
-            <label className="flex items-center gap-2 text-sm text-suave">
-              <input type="checkbox" className="accent-[#5ed98c]" checked={soAtivos} onChange={(e) => setSoAtivos(e.target.checked)} />
-              Só ativos
-            </label>
-            <button type="button" onClick={() => setPersonalizar(true)} className="ml-auto min-h-11 rounded-[10px] border border-borda bg-fundo px-4 text-sm hover:bg-elevado">
-              ▦ Colunas
+            <span className="ml-auto text-xs text-suave">Atualizado {quando(status.ultimo_sync)}</span>
+            <button
+              type="button"
+              onClick={sincronizar}
+              disabled={sincronizando}
+              className="min-h-10 rounded-[10px] bg-limao px-5 text-sm font-bold text-fundo hover:brightness-110 disabled:opacity-60"
+            >
+              {sincronizando ? "Atualizando…" : "Atualizar"}
             </button>
           </div>
-          {personalizar && <PersonalizarColunas ids={colunasIds} onSalvar={(ids) => void salvarColunas(ids)} onFechar={() => setPersonalizar(false)} />}
+          {campanhas === null ? <p className="text-sm text-suave">Carregando…</p> : <ResumoTrafego campanhas={campanhasResumo} />}
 
-          {filtroPai && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-suave">{filtroPai.nivel === "campanha" ? "Campanha" : "Conjunto"}:</span>
-              <span className="rounded-full bg-elevado px-3 py-1">{filtroPai.nome}</span>
-              <button type="button" onClick={() => setFiltroPai(null)} className="text-xs text-suave hover:text-texto">
-                limpar ✕
-              </button>
-            </div>
-          )}
-
-          <div className="overflow-x-auto">
-            <table className="w-full whitespace-nowrap text-sm">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-suave">
-                  <th className="py-2 pr-2 font-medium">Status</th>
-                  <th className="py-2 pr-4 font-medium">{ABAS.find((a) => a.v === nivel)?.nome.slice(0, -1)}</th>
-                  {cols.map((c) => (
-                    <th key={c.id} className={`py-2 pr-3 font-medium ${c.id === "orcamento" ? "" : "text-right"}`} title={c.desc} aria-sort={ordem?.id === c.id ? (ordem.asc ? "ascending" : "descending") : undefined}>
-                      {c.id === "orcamento" ? (
-                        c.nome
-                      ) : (
-                        <button type="button" onClick={() => ordenar(c.id)} className="uppercase hover:text-texto">
-                          {c.nome}
-                          {ordem?.id === c.id ? (ordem.asc ? " ↑" : " ↓") : ""}
+          <Card>
+            {/* abas por nível, com a seleção */}
+            <div className="-mx-1 flex flex-wrap items-end gap-1 border-b border-borda" role="tablist" aria-label="Nível">
+              {ABAS.map((a) => {
+                const ativa = nivel === a.v;
+                const pai = a.v === "conjunto" ? sel.campanha : a.v === "anuncio" ? (sel.conjunto.length ? sel.conjunto : sel.campanha) : [];
+                const doQue = a.v === "anuncio" && sel.conjunto.length ? "conjunto" : "campanha";
+                const rotulo = pai.length ? `${a.nome} para ${pai.length} ${doQue}${pai.length > 1 ? "s" : ""}` : a.nome;
+                return (
+                  <div key={a.v} className={`flex items-center gap-2 border-b-2 px-3 pb-2.5 pt-1 ${ativa ? "border-limao" : "border-transparent"}`}>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={ativa}
+                      onClick={() => setNivel(a.v)}
+                      className={`text-sm ${ativa ? "font-semibold text-limao" : "text-suave hover:text-texto"}`}
+                    >
+                      {a.v === "campanha" ? "📁 " : a.v === "conjunto" ? "▦ " : "▢ "}
+                      {rotulo}
+                    </button>
+                    {sel[a.v].length > 0 && (
+                      <span className="flex items-center gap-1 rounded-full bg-limao px-2.5 py-0.5 text-xs font-bold text-fundo">
+                        {sel[a.v].length} selecionado{sel[a.v].length > 1 ? "s" : ""}
+                        <button type="button" onClick={() => limpar(a.v)} aria-label={`Limpar seleção de ${a.nome.toLowerCase()}`} className="ml-0.5 hover:opacity-70">
+                          ✕
                         </button>
-                      )}
-                    </th>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* barra de ações */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => setConfig((v) => !v)} aria-label="Configurações do Meta Ads" title="Contas e impostos" className="min-h-10 rounded-[10px] border border-borda bg-fundo px-3 text-sm hover:bg-elevado">
+                ⚙
+              </button>
+              <a href={linkGerenciador()} target="_blank" rel="noreferrer" className="flex min-h-10 items-center rounded-[10px] border border-borda bg-fundo px-4 text-sm hover:bg-elevado">
+                ↗ Abrir no Gerenciador
+              </a>
+              <button type="button" onClick={() => setPersonalizar(true)} className="min-h-10 rounded-[10px] border border-borda bg-fundo px-4 text-sm hover:bg-elevado">
+                ▦ Colunas
+              </button>
+              {marcados.length > 0 && (
+                <>
+                  <span className="mx-1 h-6 w-px bg-borda" aria-hidden />
+                  <button type="button" disabled={emMassa} onClick={() => void emMassaAgir("pausar")} className="min-h-10 rounded-[10px] border border-borda bg-fundo px-4 text-sm hover:border-vermelho/60 hover:text-vermelho disabled:opacity-60">
+                    ⏸ Pausar marcados
+                  </button>
+                  <button type="button" disabled={emMassa} onClick={() => void emMassaAgir("ativar")} className="min-h-10 rounded-[10px] border border-borda bg-fundo px-4 text-sm hover:border-limao/60 hover:text-limao disabled:opacity-60">
+                    ▶ Ativar marcados
+                  </button>
+                  {emMassa && <span className="text-xs text-suave">Aplicando no Meta…</span>}
+                </>
+              )}
+            </div>
+            {personalizar && <PersonalizarColunas ids={colunasIds} onSalvar={(ids) => void salvarColunas(ids)} onFechar={() => setPersonalizar(false)} />}
+
+            {/* filtros */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="flex flex-col gap-1.5 text-[13px] text-suave">
+                Nome {nivel === "campanha" ? "da campanha" : nivel === "conjunto" ? "do conjunto" : "do anúncio"}
+                <input className={inputCls} placeholder="Filtrar por nome" value={busca} onChange={(e) => setBusca(e.target.value)} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-[13px] text-suave">
+                Status
+                <select className={inputCls} value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value as typeof filtroStatus)}>
+                  <option value="">Qualquer</option>
+                  <option value="ativos">Ativos</option>
+                  <option value="pausados">Pausados</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5 text-[13px] text-suave">
+                Período
+                <select className={inputCls} value={periodo} onChange={(e) => setPeriodo(e.target.value as Periodo)}>
+                  {PERIODOS.map((p) => (
+                    <option key={p.v} value={p.v}>
+                      {p.nome}
+                    </option>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-borda">
-                <tr className="bg-fundo/60 font-semibold">
-                  <td className="py-2.5 pr-2" />
-                  <td className="py-2.5 pr-4">
-                    {visiveis.length} {ABAS.find((a) => a.v === nivel)?.nome.toLowerCase()}
-                  </td>
-                  {cols.map((c) => {
-                    if (c.id === "orcamento") return <td key={c.id} />;
-                    const v = c.valor(total);
-                    return (
-                      <td key={c.id} className={`py-2.5 pr-3 text-right ${c.cor?.(v, total) ?? ""}`}>
-                        {c.texto(v)}
-                      </td>
-                    );
-                  })}
-                </tr>
-                {linhas === null && (
-                  <tr>
-                    <td colSpan={cols.length + 2} className="py-6 text-center text-suave">
-                      Carregando…
-                    </td>
-                  </tr>
-                )}
-                {linhas && visiveis.length === 0 && (
-                  <tr>
-                    <td colSpan={cols.length + 2} className="py-8 text-center text-suave">
-                      Nada por aqui nesse período. Se você acabou de conectar, clique em “Atualizar agora”.
-                    </td>
-                  </tr>
-                )}
-                {ordenadas.map((l) => {
-                  const ativo = l.status === "ACTIVE";
-                  const sl = somaDe(l);
-                  return (
-                    <tr key={l.id} className="hover:bg-elevado/40">
-                      <td className="py-2.5 pr-2">
-                        <Interruptor ligado={ativo} ocupado={ocupado === l.id} rotulo={`${ativo ? "Pausar" : "Ativar"} ${l.nome}`} onClick={() => agir(l, ativo ? "pausar" : "ativar")} />
-                      </td>
-                      <td className="max-w-[320px] py-2.5 pr-4">
-                        {nivel !== "anuncio" ? (
-                          <button type="button" onClick={() => abrir(l)} className="block truncate text-left font-medium hover:text-limao" title={`Ver ${nivel === "campanha" ? "conjuntos" : "anúncios"} de ${l.nome}`}>
-                            {l.nome}
-                          </button>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5 text-[13px] text-suave">
+                Conta de anúncio
+                <select className={inputCls} value={conta} onChange={(e) => setConta(e.target.value)}>
+                  <option value="">Todas</option>
+                  {status.contas
+                    .filter((c) => status.escolhidas.includes(c.id))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto rounded-xl border border-borda">
+              <table className="w-full whitespace-nowrap text-sm">
+                <thead className="sticky top-0 z-10 bg-elevado">
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-suave">
+                    <th className="w-12 py-3 pl-4 pr-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[#5ed98c]"
+                        aria-label="Marcar todos"
+                        checked={todosMarcados}
+                        onChange={(e) => marcarTodos(e.target.checked)}
+                      />
+                    </th>
+                    <th className="py-3 pr-4 font-semibold">Status</th>
+                    <th className="py-3 pr-4 font-semibold">{ABAS.find((a) => a.v === nivel)?.nome.slice(0, -1)}</th>
+                    {cols.map((c) => (
+                      <th key={c.id} className={`py-3 pr-3 font-semibold ${c.id === "orcamento" ? "" : "text-right"}`} title={c.desc} aria-sort={ordem?.id === c.id ? (ordem.asc ? "ascending" : "descending") : undefined}>
+                        {c.id === "orcamento" ? (
+                          c.nome
                         ) : (
-                          <span className="flex items-center gap-2">
-                            <span className="block truncate font-medium" title={l.nome}>
-                              {l.nome}
-                            </span>
-                            <a
-                              href={`/disparos?anuncio=${encodeURIComponent(l.id)}`}
-                              className="shrink-0 rounded-md border border-borda px-1.5 py-0.5 text-[11px] text-suave hover:border-limao/50 hover:text-limao"
-                              title="Montar um disparo para quem veio deste anúncio e não comprou"
-                            >
-                              📣 Recuperar
-                            </a>
-                          </span>
+                          <button type="button" onClick={() => ordenar(c.id)} className="uppercase hover:text-texto">
+                            {c.nome}
+                            {ordem?.id === c.id ? (ordem.asc ? " ↑" : " ↓") : ""}
+                          </button>
                         )}
-                        {l.status_efetivo && l.status_efetivo !== l.status && l.status_efetivo !== "ACTIVE" && (
-                          <span className="text-[11px] text-laranja">{l.status_efetivo.toLowerCase().replaceAll("_", " ")}</span>
-                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-borda">
+                  {linhas === null && (
+                    <tr>
+                      <td colSpan={cols.length + 3} className="py-6 text-center text-suave">
+                        Carregando…
                       </td>
-                      {cols.map((c) => {
-                        if (c.id === "orcamento")
+                    </tr>
+                  )}
+                  {linhas && visiveis.length === 0 && (
+                    <tr>
+                      <td colSpan={cols.length + 3} className="py-8 text-center text-suave">
+                        Nada por aqui com esses filtros. Se você acabou de conectar, clique em “Atualizar”.
+                      </td>
+                    </tr>
+                  )}
+                  {ordenadas.map((l) => {
+                    const ativo = l.status === "ACTIVE";
+                    const sl = somaDe(l);
+                    const marcado = marcados.includes(l.id);
+                    return (
+                      <tr key={l.id} className={marcado ? "bg-limao/5" : "hover:bg-elevado/40"}>
+                        <td className="py-2.5 pl-4 pr-3">
+                          <input type="checkbox" className="h-4 w-4 accent-[#5ed98c]" aria-label={`Marcar ${l.nome}`} checked={marcado} onChange={(e) => marcar(l.id, e.target.checked)} />
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <Interruptor ligado={ativo} ocupado={ocupado === l.id || emMassa} rotulo={`${ativo ? "Pausar" : "Ativar"} ${l.nome}`} onClick={() => agir(l, ativo ? "pausar" : "ativar")} />
+                        </td>
+                        <td className="max-w-[320px] py-2.5 pr-4">
+                          {nivel !== "anuncio" ? (
+                            <button type="button" onClick={() => abrir(l)} className="block truncate text-left font-medium hover:text-limao" title={`Ver ${nivel === "campanha" ? "conjuntos" : "anúncios"} de ${l.nome}`}>
+                              {l.nome}
+                            </button>
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              <span className="block truncate font-medium" title={l.nome}>
+                                {l.nome}
+                              </span>
+                              <a
+                                href={`/disparos?anuncio=${encodeURIComponent(l.id)}`}
+                                className="shrink-0 rounded-md border border-borda px-1.5 py-0.5 text-[11px] text-suave hover:border-limao/50 hover:text-limao"
+                                title="Montar um disparo para quem veio deste anúncio e não comprou"
+                              >
+                                📣 Recuperar
+                              </a>
+                            </span>
+                          )}
+                          {l.status_efetivo && l.status_efetivo !== l.status && l.status_efetivo !== "ACTIVE" && (
+                            <span className="text-[11px] text-laranja">{l.status_efetivo.toLowerCase().replaceAll("_", " ")}</span>
+                          )}
+                        </td>
+                        {cols.map((c) => {
+                          if (c.id === "orcamento")
+                            return (
+                              <td key={c.id} className="py-2.5 pr-3">
+                                <Orcamento linha={l} nivel={nivel} onSalvar={(v) => agir(l, "orcamento", v)} />
+                              </td>
+                            );
+                          const v = c.valor(sl);
                           return (
-                            <td key={c.id} className="py-2.5 pr-3">
-                              <Orcamento linha={l} nivel={nivel} onSalvar={(v) => agir(l, "orcamento", v)} />
+                            <td key={c.id} className={`py-2.5 pr-3 text-right tabular-nums ${c.cor?.(v, sl) ?? ""}`}>
+                              {c.texto(v)}
                             </td>
                           );
-                        const v = c.valor(sl);
-                        return (
-                          <td key={c.id} className={`py-2.5 pr-3 text-right ${c.cor?.(v, sl) ?? ""}`}>
-                            {c.texto(v)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-[11px] text-suave">
-            Contatos e vendas vêm do robô: cada conversa que chega por um anúncio de WhatsApp já sabe de qual anúncio veio. O lucro desconta gasto, imposto do Meta, taxa do gateway,
-            imposto sobre venda e custo do produto.
-          </p>
-        </Card>
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="sticky bottom-0 bg-elevado font-semibold">
+                  <tr>
+                    <td className="py-3 pl-4 pr-3" />
+                    <td className="py-3 pr-4" />
+                    <td className="py-3 pr-4 uppercase">
+                      {visiveis.length} {ABAS.find((a) => a.v === nivel)?.nome.toLowerCase()}
+                    </td>
+                    {cols.map((c) => {
+                      if (c.id === "orcamento") return <td key={c.id} className="py-3 pr-3 text-xs text-suave">—</td>;
+                      const v = c.valor(total);
+                      return (
+                        <td key={c.id} className={`py-3 pr-3 text-right tabular-nums ${c.cor?.(v, total) ?? ""}`}>
+                          {c.texto(v)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-[11px] text-suave">
+              Marque campanhas para ver só os conjuntos e anúncios delas (e o resumo lá em cima passa a ser só delas). Clicar no nome abre direto o nível de baixo. Contatos e vendas vêm do
+              robô; o lucro desconta gasto, imposto do Meta, taxa do gateway, imposto sobre venda e custo do produto.
+            </p>
+          </Card>
+        </>
       )}
 
       {aba === "relatorio" && status.conectado && acoes.length > 0 && (
