@@ -508,7 +508,7 @@ async function receberMensagem(ctx, c, funilPadrao, texto2, op = {}) {
       if (i < 0) i = opcaoPorPalavra(texto2, opcoes);
       if (i >= 0) return seguir(`opcao_${i}`);
       if (op.atrasada) return;
-      if (ag.tentativas >= 1) return seguir("sem_resposta");
+      if (ag.tentativas >= 1) return;
       const lista = opcoes.map((o, k) => `*${k + 1}.* ${o}`).join("\n");
       return repetir(ehReacao(texto2) ? `🙏 Só pra eu te mostrar o certo, me conta: é pra onde?
 

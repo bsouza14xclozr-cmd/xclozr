@@ -714,8 +714,8 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
       if (i < 0) i = opcaoPorPalavra(texto, opcoes);
       if (i >= 0) return seguir(`opcao_${i}`);
       if (op.atrasada) return; // falou enquanto o robô ainda mandava a pergunta
-      // não trava a venda: na 2ª resposta que não bate, segue pelo caminho "Não respondeu"
-      if (ag.tentativas >= 1) return seguir("sem_resposta");
+      // já repetiu as opções uma vez: não insiste nem segue sozinho; se não escolher, o "Não respondeu" (lembretes) age no tempo dele
+      if (ag.tentativas >= 1) return;
       const lista = opcoes.map((o, k) => `*${k + 1}.* ${o}`).join("\n");
       return repetir(ehReacao(texto) ? `🙏 Só pra eu te mostrar o certo, me conta: é pra onde?\n\n${lista}` : cfg.msgInvalida || `Me responde com o número da opção, tá? 🙂\n\n${lista}`);
     }
