@@ -410,6 +410,15 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
         rotulo: "📋 Enviar com botão “Copiar código Pix”",
         dica: "O cliente toca no botão e cola no app do banco. O código em texto vai logo abaixo, caso o botão não apareça no celular dele. A confirmação do pagamento continua automática.",
       },
+      {
+        tipo: "booleano",
+        chave: "botaoPixWhatsApp",
+        rotulo: "💠 Enviar o botão de Pix do WhatsApp (chave)",
+        dica: "Manda a solicitação de pagamento nativa do WhatsApp com a sua chave. Quem pagar pela chave manda o comprovante e a IA confere no Asaas antes de entregar. O copia e cola vai junto e continua confirmando sozinho.",
+      },
+      { tipo: "texto", chave: "chaveWhatsApp", rotulo: "Chave Pix do botão", placeholder: "Chave da sua conta Asaas", dica: "Use a chave da conta Asaas: é lá que a IA confere se o Pix caiu." },
+      { tipo: "textarea", chave: "msgComprovante", rotulo: "Pedir o comprovante (quando não pagar no tempo acima)", placeholder: "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!", variaveis: true },
+      { tipo: "numero", chave: "esperarComprovanteMin", rotulo: "Depois de pedir o comprovante, seguir para “Não pagou ainda” em", min: 1, sufixo: "minutos" },
     ],
     padrao: () => ({ produtoId: "", texto: "", esperarMin: 15, expiraMin: 1440 }),
     saidas: () => [

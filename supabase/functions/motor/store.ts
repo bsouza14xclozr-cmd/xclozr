@@ -83,12 +83,12 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
 
     async registrarMensagemRobo(c, s: Saida) {
       const conteudo =
-        s.tipo === "texto" ? s.texto : s.tipo === "botao_copiar" ? `${s.titulo}\n${s.texto}\n[📋 ${s.rotulo}]` : "legenda" in s ? s.legenda : s.tipo === "arquivo" ? s.nome : null;
+        s.tipo === "texto" ? s.texto : s.tipo === "botao_copiar" ? `${s.titulo}\n${s.texto}\n[📋 ${s.rotulo}]` : s.tipo === "botao_pix" ? `${s.titulo}\n${s.texto}\n[💠 Pix pela chave ${s.chave}]` : "legenda" in s ? s.legenda : s.tipo === "arquivo" ? s.nome : null;
       await db.from("mensagens").insert({
         dono_id: donoId,
         contato_id: c.id,
         autor: "robo",
-        tipo: s.tipo === "botao_copiar" ? "texto" : s.tipo,
+        tipo: s.tipo === "botao_copiar" || s.tipo === "botao_pix" ? "texto" : s.tipo,
         conteudo,
         midia_url: "url" in s ? s.url : null,
       });

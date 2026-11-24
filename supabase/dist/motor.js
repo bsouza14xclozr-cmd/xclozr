@@ -95,6 +95,17 @@ async function enviarRespostaIA(ctx, c, texto2, dividir) {
   const partes = dividir ? texto2.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 4) : [texto2.trim()];
   for (const p of partes) await enviar(ctx, c, { tipo: "texto", texto: p, esperaMs: Math.min(6e3, 900 + p.length * 35) });
 }
+function tipoDaChave(chave) {
+  const k = chave.trim();
+  if (/@/.test(k)) return "email";
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k)) return "random";
+  const d2 = k.replace(/\D/g, "");
+  if (/^\+/.test(k) || d2.length >= 12 && d2.startsWith("55")) return "phone";
+  if (d2.length === 14) return "cnpj";
+  if (d2.length === 11 && /[.-]/.test(k)) return "cpf";
+  return d2.length === 11 ? "cpf" : "random";
+}
+var MSG_COMPROVANTE = "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!";
 function blocoAtendente(funil) {
   const inicio = funil.grafo.nodes.find((n) => n.data.tipo === "inicio");
   if (!inicio?.data.config?.atendenteIA) return null;
@@ -330,7 +341,28 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
 ${pix.link}`, esperaMs: 800 });
       } else {
         let foiBotao = false;
-        if (cfg.botaoCopiar) {
+        const chaveWpp = String(cfg.chaveWhatsApp ?? "").trim();
+        if (cfg.botaoPixWhatsApp && chaveWpp) {
+          try {
+            await enviar(ctx, c, {
+              tipo: "botao_pix",
+              titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
+              texto: `${cobrado.nome} · valor: ${brl(cobrado.preco_centavos)}`,
+              chave: chaveWpp,
+              tipoChave: tipoDaChave(chaveWpp),
+              nome: String(cfg.nomeRecebedor || cobrado.nome).slice(0, 25),
+              rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
+              esperaMs: 800
+            });
+            foiBotao = true;
+            await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
+          } catch (e) {
+            ctx.log?.(`botão de Pix do WhatsApp falhou, mandando o copia e cola: ${e.message}`);
+          }
+          if (foiBotao && cfg.codigoTambem !== false) {
+            await enviar(ctx, c, { tipo: "texto", texto: "Se preferir, aqui está o Pix *copia e cola* 👇", esperaMs: 1200 });
+          }
+        } else if (cfg.botaoCopiar) {
           try {
             await enviar(ctx, c, {
               tipo: "botao_copiar",
@@ -601,6 +633,13 @@ async function executarAgendamento(ctx, c, tipo, dados) {
       await evento(ctx, c, "pix_expirou");
     }
     if (!c.robo_ativo) return;
+    if (tipo === "pix_nao_pagou" && c.campos.__chave_pix && !c.campos.__pediu_comprovante) {
+      const cfgPix = no(funil2, dados.bloco)?.data.config ?? {};
+      await patch(ctx, c, { campos: { ...c.campos, __pediu_comprovante: "1" } });
+      await enviarTexto(ctx, c, preencher(String(cfgPix.msgComprovante || MSG_COMPROVANTE), c));
+      await ctx.store.agendar(c, "pix_nao_pagou", addMin(ctx.store.agora(), minutos(cfgPix.esperarComprovanteMin, 30)), dados);
+      return;
+    }
     const saida2 = tipo === "pix_expirou" ? "expirou" : "nao_pagou";
     await ctx.store.registrarExecucao(c, funil2.id, dados.bloco, saida2);
     await executarDesde(ctx, c, funil2, proximo(funil2, dados.bloco, saida2), "");
@@ -620,7 +659,10 @@ async function pixPago(ctx, c, pagamentoId) {
   await evento(ctx, c, ativo?.pagamento_id === pagamentoId && ativo.tipo === "upsell" ? "upsell_aceito" : "pagou");
   if (!ativo || ativo.pagamento_id !== pagamentoId) return;
   await ctx.store.cancelarAgendamentos(c);
-  await patch(ctx, c, { pix_ativo: null, aguardando: null, finalizado: false });
+  const camposPago = { ...c.campos };
+  delete camposPago.__chave_pix;
+  delete camposPago.__pediu_comprovante;
+  await patch(ctx, c, { pix_ativo: null, aguardando: null, finalizado: false, campos: camposPago });
   const funil = await ctx.store.funil(ativo.funil_id);
   if (!funil) return;
   await patch(ctx, c, { funil_id: funil.id });
@@ -1061,12 +1103,14 @@ function criarStore(db2, donoId) {
     async registrarMensagemRobo(c, s) {
       const conteudo = s.tipo === "texto" ? s.texto : s.tipo === "botao_copiar" ? `${s.titulo}
 ${s.texto}
-[📋 ${s.rotulo}]` : "legenda" in s ? s.legenda : s.tipo === "arquivo" ? s.nome : null;
+[📋 ${s.rotulo}]` : s.tipo === "botao_pix" ? `${s.titulo}
+${s.texto}
+[💠 Pix pela chave ${s.chave}]` : "legenda" in s ? s.legenda : s.tipo === "arquivo" ? s.nome : null;
       await db2.from("mensagens").insert({
         dono_id: donoId,
         contato_id: c.id,
         autor: "robo",
-        tipo: s.tipo === "botao_copiar" ? "texto" : s.tipo,
+        tipo: s.tipo === "botao_copiar" || s.tipo === "botao_pix" ? "texto" : s.tipo,
         conteudo,
         midia_url: "url" in s ? s.url : null
       });
@@ -1219,7 +1263,7 @@ async function tempoHumano(s) {
     return Math.min(MAX_DELAY_AUDIO, Math.max(3e3, variar(d2 * 1e3 + 800)));
   }
   if (s.tipo === "arquivo") return variar(3500);
-  if (s.tipo === "botao_copiar") return variar(2500);
+  if (s.tipo === "botao_copiar" || s.tipo === "botao_pix") return variar(2500);
   return variar(2500 + ("legenda" in s ? Math.min(6e3, (s.legenda ?? "").length * 40) : 0));
 }
 async function configMotor(db2) {
@@ -1250,6 +1294,16 @@ function criarEnvioEvolution(db2, cfg) {
           description: s.texto,
           footer: s.rodape ?? "",
           buttons: [{ type: "copy", displayText: s.rotulo, copyCode: s.codigo }],
+          delay
+        };
+      } else if (s.tipo === "botao_pix") {
+        rota = `/message/sendButtons/${inst}`;
+        corpo = {
+          number: c.telefone,
+          title: s.titulo,
+          description: s.texto,
+          footer: s.rodape ?? "",
+          buttons: [{ type: "pix", currency: "BRL", name: s.nome, keyType: s.tipoChave, key: s.chave }],
           delay
         };
       } else if (s.tipo === "texto") {

@@ -65,7 +65,8 @@ export type Saida =
   | { tipo: "audio"; url: string; esperaMs: number }
   | { tipo: "arquivo"; url: string; nome: string; esperaMs: number }
   /** mensagem com botão nativo "Copiar código" (Evolution sendButtons) */
-  | { tipo: "botao_copiar"; titulo: string; texto: string; codigo: string; rotulo: string; rodape?: string; esperaMs: number };
+  | { tipo: "botao_copiar"; titulo: string; texto: string; codigo: string; rotulo: string; rodape?: string; esperaMs: number }
+  | { tipo: "botao_pix"; titulo: string; texto: string; chave: string; tipoChave: TipoChave; nome: string; rodape?: string; esperaMs: number };
 
 export type PatchContato = Partial<Omit<Contato, "id" | "dono_id" | "telefone" | "simulacao">>;
 
@@ -240,6 +241,20 @@ async function enviarRespostaIA(ctx: Ctx, c: Contato, texto: string, dividir: bo
   const partes = dividir ? texto.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 4) : [texto.trim()];
   for (const p of partes) await enviar(ctx, c, { tipo: "texto", texto: p, esperaMs: Math.min(6000, 900 + p.length * 35) });
 }
+
+export type TipoChave = "email" | "cpf" | "cnpj" | "phone" | "random";
+/** Descobre o tipo da chave Pix pelo formato. */
+export function tipoDaChave(chave: string): TipoChave {
+  const k = chave.trim();
+  if (/@/.test(k)) return "email";
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k)) return "random";
+  const d = k.replace(/\D/g, "");
+  if (/^\+/.test(k) || (d.length >= 12 && d.startsWith("55"))) return "phone";
+  if (d.length === 14) return "cnpj";
+  if (d.length === 11 && /[.-]/.test(k)) return "cpf";
+  return d.length === 11 ? "cpf" : "random";
+}
+export const MSG_COMPROVANTE = "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!";
 
 type Resultado = { saida: string } | { espera: Aguardando } | { parar: true; finalizar?: boolean };
 
@@ -510,7 +525,29 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):\n${pix.link}`, esperaMs: 800 });
       } else {
         let foiBotao = false;
-        if (cfg.botaoCopiar) {
+        const chaveWpp = String(cfg.chaveWhatsApp ?? "").trim();
+        if (cfg.botaoPixWhatsApp && chaveWpp) {
+          // botão nativo de Pix do WhatsApp com a chave: o cliente paga pela chave e manda o comprovante (a IA confere no Asaas)
+          try {
+            await enviar(ctx, c, {
+              tipo: "botao_pix",
+              titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
+              texto: `${cobrado.nome} · valor: ${brl(cobrado.preco_centavos)}`,
+              chave: chaveWpp,
+              tipoChave: tipoDaChave(chaveWpp),
+              nome: String(cfg.nomeRecebedor || cobrado.nome).slice(0, 25),
+              rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
+              esperaMs: 800,
+            });
+            foiBotao = true;
+            await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
+          } catch (e) {
+            ctx.log?.(`botão de Pix do WhatsApp falhou, mandando o copia e cola: ${(e as Error).message}`);
+          }
+          if (foiBotao && cfg.codigoTambem !== false) {
+            await enviar(ctx, c, { tipo: "texto", texto: "Se preferir, aqui está o Pix *copia e cola* 👇", esperaMs: 1200 });
+          }
+        } else if (cfg.botaoCopiar) {
           // botão "📋 Copiar código Pix": o cliente toca e cola no banco (o código é o mesmo do gateway, a confirmação continua automática)
           try {
             await enviar(ctx, c, {
@@ -824,6 +861,14 @@ export async function executarAgendamento(ctx: Ctx, c: Contato, tipo: string, da
       await evento(ctx, c, "pix_expirou");
     }
     if (!c.robo_ativo) return;
+    // Pix pela chave do WhatsApp: antes dos lembretes, pede o comprovante (a IA confere quando chegar)
+    if (tipo === "pix_nao_pagou" && c.campos.__chave_pix && !c.campos.__pediu_comprovante) {
+      const cfgPix = no(funil, dados.bloco)?.data.config ?? {};
+      await patch(ctx, c, { campos: { ...c.campos, __pediu_comprovante: "1" } });
+      await enviarTexto(ctx, c, preencher(String(cfgPix.msgComprovante || MSG_COMPROVANTE), c));
+      await ctx.store.agendar(c, "pix_nao_pagou", addMin(ctx.store.agora(), minutos(cfgPix.esperarComprovanteMin, 30)), dados);
+      return;
+    }
     const saida = tipo === "pix_expirou" ? "expirou" : "nao_pagou";
     await ctx.store.registrarExecucao(c, funil.id, dados.bloco, saida);
     await executarDesde(ctx, c, funil, proximo(funil, dados.bloco, saida), "");
@@ -847,7 +892,11 @@ export async function pixPago(ctx: Ctx, c: Contato, pagamentoId: string) {
   await evento(ctx, c, ativo?.pagamento_id === pagamentoId && ativo.tipo === "upsell" ? "upsell_aceito" : "pagou");
   if (!ativo || ativo.pagamento_id !== pagamentoId) return;
   await ctx.store.cancelarAgendamentos(c);
-  await patch(ctx, c, { pix_ativo: null, aguardando: null, finalizado: false });
+  // pagou: a conversa deixa de estar "esperando comprovante da chave"
+  const camposPago = { ...c.campos };
+  delete camposPago.__chave_pix;
+  delete camposPago.__pediu_comprovante;
+  await patch(ctx, c, { pix_ativo: null, aguardando: null, finalizado: false, campos: camposPago });
   const funil = await ctx.store.funil(ativo.funil_id);
   if (!funil) return;
   await patch(ctx, c, { funil_id: funil.id });
