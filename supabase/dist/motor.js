@@ -95,10 +95,25 @@ async function enviarRespostaIA(ctx, c, texto2, dividir) {
   const partes = dividir ? texto2.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 4) : [texto2.trim()];
   for (const p of partes) await enviar(ctx, c, { tipo: "texto", texto: p, esperaMs: Math.min(6e3, 900 + p.length * 35) });
 }
-async function iniciar(ctx, c, funil) {
+function blocoAtendente(funil) {
+  const inicio = funil.grafo.nodes.find((n) => n.data.tipo === "inicio");
+  if (!inicio?.data.config?.atendenteIA) return null;
+  const objs = funil.grafo.nodes.filter((n) => n.data.tipo === "objecoes");
+  return objs.find((n) => n.data.config?.iaLigada) ?? objs[0] ?? null;
+}
+async function iniciar(ctx, c, funil, primeiraMensagem = "") {
   await ctx.store.cancelarAgendamentos(c);
   await patch(ctx, c, { funil_id: funil.id, aguardando: null, bloco_atual: null, finalizado: false });
   const inicio = funil.grafo.nodes.find((n) => n.data.tipo === "inicio");
+  const atend = primeiraMensagem.trim() && ctx.ia ? blocoAtendente(funil) : null;
+  if (inicio && atend) {
+    await ctx.store.registrarExecucao(c, funil.id, inicio.id, "atendente");
+    await patch(ctx, c, { bloco_atual: atend.id });
+    const r = await esperarResposta(ctx, c, atend, "objecoes", minutos(atend.data.config?.esperarMin, 120), { atendente: 1 });
+    if ("espera" in r) await patch(ctx, c, { aguardando: r.espera });
+    await receberMensagem(ctx, c, async () => funil, primeiraMensagem);
+    return;
+  }
   const primeiro = inicio ? proximo(funil, inicio.id, "seguir") : null;
   if (inicio) await ctx.store.registrarExecucao(c, funil.id, inicio.id, "seguir");
   if (!primeiro) {
@@ -462,14 +477,14 @@ async function receberMensagem(ctx, c, funilPadrao, texto2, op = {}) {
   if (!c.robo_ativo) return;
   if (!c.funil_id || !c.bloco_atual && !c.finalizado) {
     const f = c.funil_id && await ctx.store.funil(c.funil_id) || await funilPadrao();
-    if (f) await iniciar(ctx, c, f);
+    if (f) await iniciar(ctx, c, f, op.atrasada ? "" : texto2);
     return;
   }
   if (c.finalizado && !c.aguardando && !c.pix_ativo) {
     const atual = await ctx.store.funil(c.funil_id);
     if (!atual || atual.ativo === false || !await ctx.store.jaComprou(c)) {
       const f = await funilPadrao();
-      if (f) await iniciar(ctx, c, f);
+      if (f) await iniciar(ctx, c, f, texto2);
       return;
     }
   }
@@ -531,14 +546,14 @@ ${lista}`);
       if (!negou(texto2) && !pergunta && (contemAlguma(texto2, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto2), palavras(cfg.palavrasCompra)))) return seguir("comprar");
       const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto2, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
-      const reacao = ehReacao(texto2);
+      const reacao = !(ag.atendente && ctx.ia) && ehReacao(texto2);
       if (op.atrasada && (reacao || normalizar(texto2).length < 15)) return;
       if (reacao) {
         if (ag.reacoes) return;
         return repetir(cfg.msgReacao || "🙏🙏 Quer que eu já gere seu Pix pra você receber agora?", { reacoes: 1 });
       }
-      if (cfg.iaLigada && ctx.ia) {
-        const r = await ctx.ia(c, configIAObjecoes(cfg));
+      if ((cfg.iaLigada || ag.atendente) && ctx.ia) {
+        const r = await ctx.ia(c, configIAObjecoes(cfg, Boolean(ag.atendente)));
         if (!("erro" in r)) {
           await enviarRespostaIA(ctx, c, r.resposta, false);
           if (r.concluido && aceitou(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
@@ -633,11 +648,11 @@ function opcaoPorPalavra(texto2, opcoes) {
   const achadas = opcoes.map((o, i) => ({ i, hits: normalizar(o).replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length >= 4 && !PALAVRAS_VAZIAS.has(w)).filter((w) => t.includes(` ${w} `) || t.includes(` ${w.slice(0, -1)} `)).length })).filter((x) => x.hits > 0).sort((a, b) => b.hits - a.hits);
   return achadas.length && (achadas.length === 1 || achadas[0].hits > achadas[1].hits) ? achadas[0].i : -1;
 }
-function configIAObjecoes(cfg) {
+function configIAObjecoes(cfg, atendente = false) {
   return {
     instrucoes: [
       cfg.iaInstrucoes || "Você é a pessoa que vende este produto no WhatsApp: simpática, acolhedora e direta.",
-      "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
+      atendente ? "Você atende este cliente desde a primeira mensagem (ele veio do anúncio). Na primeira resposta, cumprimente, apresente o produto em poucas linhas (o que é, o que vem e o preço) e pergunte algo para entender o que ele procura. Depois, responda exatamente o que ele disser, com naturalidade. Mensagens curtas, como no WhatsApp." : "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
       "Se fizer sentido, termine com uma pergunta curta convidando a gerar o Pix (sem repetir a mesma frase de antes).",
       "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto."
     ].join("\n"),

@@ -225,10 +225,17 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
     cor: VERDE,
     icone: "M5 3l14 9-14 9V3z",
     grupo: null,
-    campos: [],
+    campos: [
+      {
+        tipo: "booleano",
+        chave: "atendenteIA",
+        rotulo: "🤖 Atendente IA atende desde a 1ª mensagem",
+        dica: "Pula a abertura do roteiro: a IA do bloco Objeções (com IA ligada) responde o cliente na hora, tira as dúvidas e, quando ele disser que quer, segue pela saída Comprar (Pix, entrega e upsell).",
+      },
+    ],
     padrao: () => ({}),
     saidas: () => [{ id: "seguir", rotulo: "Começar" }],
-    resumo: () => "Cliente chamou no WhatsApp",
+    resumo: (c) => (c?.atendenteIA ? "🤖 Atendente IA atende desde a 1ª mensagem" : "Cliente chamou no WhatsApp"),
   },
 
   mensagem: {

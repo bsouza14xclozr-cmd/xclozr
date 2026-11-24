@@ -23,6 +23,7 @@ export type Aguardando = {
   cancelaSeResponder?: boolean;
   /** já mandou o empurrãozinho para "amém/🙏" neste bloco */
   reacoes?: number;
+  atendente?: number; // objeções aberta pelo Atendente IA logo na 1ª mensagem
   /** já mandou a resposta padrão ("não entendi") neste bloco */
   padrao?: number;
 };
@@ -243,10 +244,28 @@ async function enviarRespostaIA(ctx: Ctx, c: Contato, texto: string, dividir: bo
 type Resultado = { saida: string } | { espera: Aguardando } | { parar: true; finalizar?: boolean };
 
 /** Começa (ou recomeça) o funil do contato a partir do Início. */
-export async function iniciar(ctx: Ctx, c: Contato, funil: Funil) {
+/** Bloco de conversa que o Atendente IA usa quando atende desde a 1ª mensagem (objeções com IA). */
+export function blocoAtendente(funil: Funil): No | null {
+  const inicio = funil.grafo.nodes.find((n) => n.data.tipo === "inicio");
+  if (!inicio?.data.config?.atendenteIA) return null;
+  const objs = funil.grafo.nodes.filter((n) => n.data.tipo === "objecoes");
+  return objs.find((n) => n.data.config?.iaLigada) ?? objs[0] ?? null;
+}
+
+export async function iniciar(ctx: Ctx, c: Contato, funil: Funil, primeiraMensagem = "") {
   await ctx.store.cancelarAgendamentos(c);
   await patch(ctx, c, { funil_id: funil.id, aguardando: null, bloco_atual: null, finalizado: false });
   const inicio = funil.grafo.nodes.find((n) => n.data.tipo === "inicio");
+  // Atendente IA ligado: pula o roteiro de abertura e a IA já responde o que o cliente escreveu
+  const atend = primeiraMensagem.trim() && ctx.ia ? blocoAtendente(funil) : null;
+  if (inicio && atend) {
+    await ctx.store.registrarExecucao(c, funil.id, inicio.id, "atendente");
+    await patch(ctx, c, { bloco_atual: atend.id });
+    const r = await esperarResposta(ctx, c, atend, "objecoes", minutos(atend.data.config?.esperarMin, 120), { atendente: 1 });
+    if ("espera" in r) await patch(ctx, c, { aguardando: r.espera });
+    await receberMensagem(ctx, c, async () => funil, primeiraMensagem);
+    return;
+  }
   const primeiro = inicio ? proximo(funil, inicio.id, "seguir") : null;
   if (inicio) await ctx.store.registrarExecucao(c, funil.id, inicio.id, "seguir");
   if (!primeiro) {
@@ -661,7 +680,7 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
   // primeira mensagem (ou funil ainda não começou)
   if (!c.funil_id || (!c.bloco_atual && !c.finalizado)) {
     const f = (c.funil_id && (await ctx.store.funil(c.funil_id))) || (await funilPadrao());
-    if (f) await iniciar(ctx, c, f);
+    if (f) await iniciar(ctx, c, f, op.atrasada ? "" : texto);
     return;
   }
 
@@ -671,7 +690,7 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
     const atual = await ctx.store.funil(c.funil_id);
     if (!atual || atual.ativo === false || !(await ctx.store.jaComprou(c))) {
       const f = await funilPadrao();
-      if (f) await iniciar(ctx, c, f);
+      if (f) await iniciar(ctx, c, f, texto);
       return;
     }
   }
@@ -740,7 +759,8 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
       if (!negou(texto) && !pergunta && (contemAlguma(texto, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto), palavras(cfg.palavrasCompra)))) return seguir("comprar");
       const obj = ((cfg.objecoes ?? []) as { palavras: string; resposta: string }[]).find((o) => contemAlguma(texto, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
-      const reacao = ehReacao(texto);
+      // com o Atendente IA, "oi"/"👍" também vai para a IA (ela conduz a conversa desde o começo)
+      const reacao = !(ag.atendente && ctx.ia) && ehReacao(texto);
       // mensagem que chegou no meio da sequência e não diz nada novo: não responde fora de hora
       if (op.atrasada && (reacao || normalizar(texto).length < 15)) return;
       if (reacao) {
@@ -748,8 +768,8 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
         return repetir(cfg.msgReacao || "🙏🙏 Quer que eu já gere seu Pix pra você receber agora?", { reacoes: 1 });
       }
       // a IA entende o que o cliente disse e responde de verdade
-      if (cfg.iaLigada && ctx.ia) {
-        const r = await ctx.ia(c, configIAObjecoes(cfg));
+      if ((cfg.iaLigada || ag.atendente) && ctx.ia) {
+        const r = await ctx.ia(c, configIAObjecoes(cfg, Boolean(ag.atendente)));
         if (!("erro" in r)) {
           await enviarRespostaIA(ctx, c, r.resposta, false);
           // a IA só fecha a venda se a mensagem do cliente for um aceite claro (pergunta/comentário nunca fecha)
@@ -868,11 +888,13 @@ export function opcaoPorPalavra(texto: string, opcoes: string[]) {
   return achadas.length && (achadas.length === 1 || achadas[0].hits > achadas[1].hits) ? achadas[0].i : -1;
 }
 
-function configIAObjecoes(cfg: Config): Config {
+function configIAObjecoes(cfg: Config, atendente = false): Config {
   return {
     instrucoes: [
       cfg.iaInstrucoes || "Você é a pessoa que vende este produto no WhatsApp: simpática, acolhedora e direta.",
-      "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
+      atendente
+        ? "Você atende este cliente desde a primeira mensagem (ele veio do anúncio). Na primeira resposta, cumprimente, apresente o produto em poucas linhas (o que é, o que vem e o preço) e pergunte algo para entender o que ele procura. Depois, responda exatamente o que ele disser, com naturalidade. Mensagens curtas, como no WhatsApp."
+        : "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
       "Se fizer sentido, termine com uma pergunta curta convidando a gerar o Pix (sem repetir a mesma frase de antes).",
       "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto.",
     ].join("\n"),
