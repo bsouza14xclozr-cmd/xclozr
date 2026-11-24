@@ -262,6 +262,24 @@ export async function pixAsaasPago(cfg: ConfigGateway, qrId: string, valorCentav
   return (r.data ?? []).some((c) => ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(String(c.status)) && Math.round(Number(c.value ?? 0) * 100) >= valorCentavos);
 }
 
+/** Pix recebidos no Asaas entre dois dias (AAAA-MM-DD), para conferir comprovantes. */
+export async function pixRecebidosAsaas(cfg: ConfigGateway, de: string, ate: string) {
+  type P = { id: string; value: number; customer: string; pixQrCodeId?: string | null; pixTransaction?: string | null; status: string; paymentDate?: string };
+  const todos: P[] = [];
+  for (let offset = 0; offset < 500; offset += 100) {
+    const r = await asaas<{ data?: P[]; hasMore?: boolean }>(cfg, "GET", `/payments?billingType=PIX&paymentDate%5Bge%5D=${de}&paymentDate%5Ble%5D=${ate}&limit=100&offset=${offset}`);
+    todos.push(...(r.data ?? []));
+    if (!r.hasMore) break;
+  }
+  return todos.filter((p) => ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(String(p.status)));
+}
+
+/** Nome do pagador (o Asaas cria o cliente com o nome de quem mandou o Pix). */
+export async function nomeClienteAsaas(cfg: ConfigGateway, clienteId: string) {
+  const r = await asaas<{ name?: string }>(cfg, "GET", `/customers/${encodeURIComponent(clienteId)}`);
+  return r.name ?? "";
+}
+
 export function urlAvisoAsaas(donoId: string, segredo: string) {
   return `${Deno.env.get("SUPABASE_URL")}/functions/v1/motor/asaas?d=${donoId}&s=${segredo}`;
 }

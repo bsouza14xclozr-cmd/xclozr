@@ -14,6 +14,7 @@ type Contato = {
   telefone: string;
   robo_ativo: boolean;
   robo_retomar_em?: string | null;
+  campos?: Record<string, string> | null;
   ultima_msg_em: string | null;
   etiquetas: string[];
   kanban_coluna_id: string | null;
@@ -104,7 +105,7 @@ export function ConversasCliente() {
     const [c, m, k] = await Promise.all([
       supabase
         .from("contatos")
-        .select("id, nome, telefone, robo_ativo, robo_retomar_em, ultima_msg_em, etiquetas, kanban_coluna_id")
+        .select("id, nome, telefone, robo_ativo, robo_retomar_em, campos, ultima_msg_em, etiquetas, kanban_coluna_id")
         .eq("simulacao", false)
         .order("ultima_msg_em", { ascending: false, nullsFirst: false })
         .limit(300),
@@ -156,7 +157,7 @@ export function ConversasCliente() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contatos" }, (payload) => {
         const n = payload.new as Contato & { simulacao?: boolean };
         if (n.simulacao) return;
-        setContatos((cs) => cs?.map((c) => (c.id === n.id ? { ...c, robo_ativo: n.robo_ativo, robo_retomar_em: n.robo_retomar_em, nome: n.nome, etiquetas: n.etiquetas, kanban_coluna_id: n.kanban_coluna_id } : c)) ?? cs);
+        setContatos((cs) => cs?.map((c) => (c.id === n.id ? { ...c, robo_ativo: n.robo_ativo, robo_retomar_em: n.robo_retomar_em, campos: n.campos, nome: n.nome, etiquetas: n.etiquetas, kanban_coluna_id: n.kanban_coluna_id } : c)) ?? cs);
       })
       .subscribe();
     return () => {
@@ -235,6 +236,22 @@ export function ConversasCliente() {
     }
     setTexto("");
     if (pausar) setContatos((cs) => cs?.map((c) => (c.id === atual.id ? { ...c, robo_ativo: false } : c)) ?? cs);
+  }
+
+  const chaveMarcada = Boolean(atual?.campos?.__chave_pix && agora !== null && agora - new Date(atual.campos.__chave_pix).getTime() < 3 * 86_400_000);
+
+  /** "Mandei a chave Pix": o comprovante desta conversa passa a ser conferido pela IA + Asaas. */
+  async function alternarChave() {
+    if (!atual) return;
+    const supabase = createClient();
+    const { data } = await supabase.from("contatos").select("campos").eq("id", atual.id).maybeSingle();
+    const campos = { ...((data?.campos as Record<string, string>) ?? {}) };
+    if (chaveMarcada) delete campos.__chave_pix;
+    else campos.__chave_pix = new Date().toISOString();
+    setContatos((cs) => cs?.map((c) => (c.id === atual.id ? { ...c, campos } : c)) ?? cs);
+    const { error } = await supabase.from("contatos").update({ campos }).eq("id", atual.id);
+    if (error) setErro("Não consegui marcar a conversa.");
+    else setAviso(chaveMarcada ? null : "Pronto: quando o cliente mandar o comprovante, a IA lê e o XClozr confere no Asaas antes de entregar.");
   }
 
   async function alternarRobo() {
@@ -423,6 +440,16 @@ export function ConversasCliente() {
                     className={`min-h-11 shrink-0 rounded-[10px] border px-3 text-base hover:bg-elevado ${entregando ? "border-limao/60" : "border-borda"}`}
                   >
                     📦
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void alternarChave()}
+                    aria-pressed={chaveMarcada}
+                    title={chaveMarcada ? "Conferindo comprovante (clique para desmarcar)" : "Mandei a chave Pix: conferir o comprovante automaticamente"}
+                    aria-label="Mandei a chave Pix"
+                    className={`min-h-11 shrink-0 rounded-[10px] border px-3 text-base hover:bg-elevado ${chaveMarcada ? "border-azul/70 bg-azul/10" : "border-borda"}`}
+                  >
+                    🧾
                   </button>
                   <textarea
                     value={texto}

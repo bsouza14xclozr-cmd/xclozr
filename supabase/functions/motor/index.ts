@@ -11,6 +11,7 @@ import { CAMPOS_CONTATO, criarStore, linhaParaContato } from "./store.ts";
 import { configMotor, criarEnvioEvolution, envioSimulado } from "./envio.ts";
 import { rotasNumeros } from "./numeros.ts";
 import { escolherFunil, type FunilEntrada } from "./entrada.ts";
+import { MARCA_CHAVE, chaveEnviada, conferirComprovante, pareceChavePix } from "./comprovante.ts";
 import { MODELO_PADRAO, responderIA, testarIA, type Provedor } from "./ia.ts";
 import { ETIQUETA_SAIR, ehPedidoSair, processarDisparos } from "./disparos.ts";
 import { audioComVoz } from "./voz.ts";
@@ -609,6 +610,18 @@ async function evolution(req: Request, cfg: Record<string, string>) {
 
   // mensagem enviada pelo próprio celular: se não foi o robô, um humano assumiu → pausa o robô
   if (d.key?.fromMe) {
+    // você mandou a chave Pix pelo app: a partir daqui, comprovante desta conversa é conferido pela IA + Asaas
+    if (linha && pareceChavePix(d.message, texto)) {
+      const campos = { ...(linha.campos ?? {}), [MARCA_CHAVE]: new Date().toISOString() };
+      await db.from("contatos").update({ campos }).eq("id", linha.id);
+      linha.campos = campos;
+      // você assumiu essa venda: o robô espera (volta sozinho em 30 min, ou na hora em que o comprovante for confirmado)
+      await db
+        .from("contatos")
+        .update({ robo_ativo: false, robo_retomar_em: new Date(Date.now() + RETOMAR_MS).toISOString() })
+        .eq("id", linha.id)
+        .or("robo_ativo.eq.true,robo_retomar_em.not.is.null");
+    }
     // mensagem sem texto (botão, figurinha…) não indica que um humano assumiu
     if (linha && texto.trim()) {
       const { data: ult } = await db
@@ -649,6 +662,14 @@ async function evolution(req: Request, cfg: Record<string, string>) {
   }
   const contato = linhaParaContato(linha);
   await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto, wa_id: d.key?.id });
+
+  // comprovante de quem recebeu a chave Pix pelo app: a IA lê e o Asaas confirma (copia e cola segue pelo gateway)
+  const ehMidia = Boolean(d.message?.imageMessage || d.message?.documentMessage || d.message?.documentWithCaptionMessage);
+  if (ehMidia && chaveEnviada(contato) && d.key?.id) {
+    await db.from("agendamentos").insert({ dono_id: donoId, contato_id: contato.id, tipo: "comprovante", executar_em: new Date().toISOString(), dados: { wa_id: d.key.id, tentativa: 0 } });
+    await db.from("contatos").update({ ultima_msg_em: new Date().toISOString(), numero_id: numero.id }).eq("id", contato.id);
+    return json({ ok: true, comprovante: true });
+  }
   await db.from("contatos").update({ ultima_msg_em: new Date().toISOString(), numero_id: numero.id }).eq("id", contato.id);
 
   // disparos: marca que respondeu e trata o pedido de SAIR
@@ -764,7 +785,21 @@ async function relogio(req: Request, cfg: Record<string, string>) {
       const contato = await carregarContato(a.contato_id);
       if (!contato) return;
       const ctx = ctxPara(a.dono_id, contato.simulacao, cfg);
-      if (a.tipo === "pix_pago") {
+      if (a.tipo === "comprovante") {
+        await conferirComprovante(
+          {
+            db,
+            evolution: { url: cfg.evolution_url ?? "", apikey: cfg.evolution_apikey ?? "" },
+            ctx: (dono, c) => ctxPara(dono, c.simulacao, cfg),
+            agendar: async (c, em, dados) => {
+              await db.from("agendamentos").insert({ dono_id: a.dono_id, contato_id: c.id, tipo: "comprovante", executar_em: em.toISOString(), dados });
+            },
+          },
+          a.dono_id,
+          contato,
+          a.dados ?? {},
+        );
+      } else if (a.tipo === "pix_pago") {
         await M.pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
       } else if (a.tipo === "reprocessar") {
         await M.receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato, String(a.dados?.texto ?? "")), String(a.dados?.texto ?? ""), { atrasada: true });

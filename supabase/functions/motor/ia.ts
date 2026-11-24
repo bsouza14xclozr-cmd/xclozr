@@ -195,6 +195,101 @@ export async function responderIA(db: SupabaseClient, donoId: string, c: Contato
   }
 }
 
+export type LeituraComprovante = {
+  e_comprovante_pix: boolean;
+  valor_centavos: number | null;
+  data_hora: string | null;
+  pagador_nome: string | null;
+  recebedor_nome: string | null;
+  recebedor_chave: string | null;
+  id_transacao: string | null;
+  banco_pagador: string | null;
+  suspeito: boolean;
+  motivo: string | null;
+};
+
+const PEDIDO_COMPROVANTE =
+  'Leia esta imagem/documento. Responda SOMENTE um JSON: {"e_comprovante_pix": true se for comprovante de Pix/transferência concluída, "valor_centavos": inteiro ou null, "data_hora": "AAAA-MM-DD HH:MM" ou null, "pagador_nome": nome completo de quem pagou ou null, "recebedor_nome": nome de quem recebeu ou null, "recebedor_chave": chave Pix de destino ou null, "id_transacao": ID/E2E da transação ou null, "banco_pagador": texto ou null, "suspeito": true se parecer editado, cortado ou inconsistente, "motivo": curto ou null}';
+
+/** IA com visão lê o comprovante (imagem ou PDF). */
+export async function lerComprovante(db: SupabaseClient, donoId: string, contatoId: string, base64: string, mime: string): Promise<LeituraComprovante | { erro: string }> {
+  const cfg = await configIA(db, donoId);
+  if (!cfg) return { erro: "Agente de IA não configurado" };
+  const pdf = mime.includes("pdf");
+  const sinal = AbortSignal.timeout(45_000);
+  try {
+    let texto = "";
+    let entrada = 0;
+    let saida = 0;
+    if (cfg.provedor === "gemini") {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`, {
+        method: "POST",
+        signal: sinal,
+        headers: { "content-type": "application/json", "x-goog-api-key": cfg.chave },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: PEDIDO_COMPROVANTE }] }],
+          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 800 },
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error?.message ?? `Gemini ${r.status}`);
+      texto = (j.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
+      entrada = j.usageMetadata?.promptTokenCount ?? 0;
+      saida = j.usageMetadata?.candidatesTokenCount ?? 0;
+    } else if (cfg.provedor === "anthropic") {
+      const bloco = pdf
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
+        : { type: "image", source: { type: "base64", media_type: mime, data: base64 } };
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: sinal,
+        headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: cfg.modelo, max_tokens: 800, messages: [{ role: "user", content: [bloco, { type: "text", text: PEDIDO_COMPROVANTE }] }] }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error?.message ?? `Claude ${r.status}`);
+      texto = (j.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("");
+      entrada = j.usage?.input_tokens ?? 0;
+      saida = j.usage?.output_tokens ?? 0;
+    } else {
+      if (pdf) return { erro: "a OpenAI não lê PDF por aqui (peça o print do comprovante)" };
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        signal: sinal,
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.chave}` },
+        body: JSON.stringify({
+          model: cfg.modelo,
+          max_completion_tokens: 800,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } }, { type: "text", text: PEDIDO_COMPROVANTE }] }],
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error?.message ?? `OpenAI ${r.status}`);
+      texto = String(j.choices?.[0]?.message?.content ?? "");
+      entrada = j.usage?.prompt_tokens ?? 0;
+      saida = j.usage?.completion_tokens ?? 0;
+    }
+    await db.from("ia_uso").insert({ dono_id: donoId, contato_id: contatoId, provedor: cfg.provedor, modelo: cfg.modelo, tokens_entrada: entrada, tokens_saida: saida, simulacao: false });
+    const j = extrairJson(texto) as unknown as Partial<LeituraComprovante> | null;
+    if (!j) return { erro: "a IA não conseguiu ler o comprovante" };
+    return {
+      e_comprovante_pix: j.e_comprovante_pix === true,
+      valor_centavos: Number.isFinite(Number(j.valor_centavos)) && j.valor_centavos !== null ? Math.round(Number(j.valor_centavos)) : null,
+      data_hora: j.data_hora ? String(j.data_hora) : null,
+      pagador_nome: j.pagador_nome ? String(j.pagador_nome) : null,
+      recebedor_nome: j.recebedor_nome ? String(j.recebedor_nome) : null,
+      recebedor_chave: j.recebedor_chave ? String(j.recebedor_chave) : null,
+      id_transacao: j.id_transacao ? String(j.id_transacao) : null,
+      banco_pagador: j.banco_pagador ? String(j.banco_pagador) : null,
+      suspeito: j.suspeito === true,
+      motivo: j.motivo ? String(j.motivo) : null,
+    };
+  } catch (e) {
+    return { erro: `Falha na IA (${cfg.provedor}): ${(e as Error).message}`.slice(0, 300) };
+  }
+}
+
 /** Testa uma chave antes de salvar. */
 export async function testarIA(cfg: ConfigIA) {
   const r = await chamar(cfg, 'Responda só com o JSON {"resposta": "ok", "concluido": false}.', [{ papel: "cliente", texto: "teste" }]);

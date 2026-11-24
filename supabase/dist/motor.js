@@ -863,6 +863,19 @@ async function pixAsaasPago(cfg, qrId, valorCentavos) {
   const r = await asaas(cfg, "GET", `/payments?pixQrCodeId=${encodeURIComponent(qrId)}&limit=10`);
   return (r.data ?? []).some((c) => ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(String(c.status)) && Math.round(Number(c.value ?? 0) * 100) >= valorCentavos);
 }
+async function pixRecebidosAsaas(cfg, de, ate) {
+  const todos = [];
+  for (let offset = 0; offset < 500; offset += 100) {
+    const r = await asaas(cfg, "GET", `/payments?billingType=PIX&paymentDate%5Bge%5D=${de}&paymentDate%5Ble%5D=${ate}&limit=100&offset=${offset}`);
+    todos.push(...r.data ?? []);
+    if (!r.hasMore) break;
+  }
+  return todos.filter((p) => ["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"].includes(String(p.status)));
+}
+async function nomeClienteAsaas(cfg, clienteId) {
+  const r = await asaas(cfg, "GET", `/customers/${encodeURIComponent(clienteId)}`);
+  return r.name ?? "";
+}
 function urlAvisoAsaas(donoId, segredo) {
   return `${Deno.env.get("SUPABASE_URL")}/functions/v1/motor/asaas?d=${donoId}&s=${segredo}`;
 }
@@ -1591,9 +1604,235 @@ async function responderIA(db2, donoId, c, bloco) {
     return { erro: `Falha na IA (${cfg.provedor}): ${e.message}`.slice(0, 300) };
   }
 }
+var PEDIDO_COMPROVANTE = 'Leia esta imagem/documento. Responda SOMENTE um JSON: {"e_comprovante_pix": true se for comprovante de Pix/transferência concluída, "valor_centavos": inteiro ou null, "data_hora": "AAAA-MM-DD HH:MM" ou null, "pagador_nome": nome completo de quem pagou ou null, "recebedor_nome": nome de quem recebeu ou null, "recebedor_chave": chave Pix de destino ou null, "id_transacao": ID/E2E da transação ou null, "banco_pagador": texto ou null, "suspeito": true se parecer editado, cortado ou inconsistente, "motivo": curto ou null}';
+async function lerComprovante(db2, donoId, contatoId, base64, mime) {
+  const cfg = await configIA(db2, donoId);
+  if (!cfg) return { erro: "Agente de IA não configurado" };
+  const pdf = mime.includes("pdf");
+  const sinal = AbortSignal.timeout(45e3);
+  try {
+    let texto2 = "";
+    let entrada = 0;
+    let saida = 0;
+    if (cfg.provedor === "gemini") {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`, {
+        method: "POST",
+        signal: sinal,
+        headers: { "content-type": "application/json", "x-goog-api-key": cfg.chave },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: PEDIDO_COMPROVANTE }] }],
+          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 800 }
+        })
+      });
+      const j2 = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j2?.error?.message ?? `Gemini ${r.status}`);
+      texto2 = (j2.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+      entrada = j2.usageMetadata?.promptTokenCount ?? 0;
+      saida = j2.usageMetadata?.candidatesTokenCount ?? 0;
+    } else if (cfg.provedor === "anthropic") {
+      const bloco = pdf ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } } : { type: "image", source: { type: "base64", media_type: mime, data: base64 } };
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: sinal,
+        headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: cfg.modelo, max_tokens: 800, messages: [{ role: "user", content: [bloco, { type: "text", text: PEDIDO_COMPROVANTE }] }] })
+      });
+      const j2 = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j2?.error?.message ?? `Claude ${r.status}`);
+      texto2 = (j2.content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("");
+      entrada = j2.usage?.input_tokens ?? 0;
+      saida = j2.usage?.output_tokens ?? 0;
+    } else {
+      if (pdf) return { erro: "a OpenAI não lê PDF por aqui (peça o print do comprovante)" };
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        signal: sinal,
+        headers: { "content-type": "application/json", authorization: `Bearer ${cfg.chave}` },
+        body: JSON.stringify({
+          model: cfg.modelo,
+          max_completion_tokens: 800,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } }, { type: "text", text: PEDIDO_COMPROVANTE }] }]
+        })
+      });
+      const j2 = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j2?.error?.message ?? `OpenAI ${r.status}`);
+      texto2 = String(j2.choices?.[0]?.message?.content ?? "");
+      entrada = j2.usage?.prompt_tokens ?? 0;
+      saida = j2.usage?.completion_tokens ?? 0;
+    }
+    await db2.from("ia_uso").insert({ dono_id: donoId, contato_id: contatoId, provedor: cfg.provedor, modelo: cfg.modelo, tokens_entrada: entrada, tokens_saida: saida, simulacao: false });
+    const j = extrairJson(texto2);
+    if (!j) return { erro: "a IA não conseguiu ler o comprovante" };
+    return {
+      e_comprovante_pix: j.e_comprovante_pix === true,
+      valor_centavos: Number.isFinite(Number(j.valor_centavos)) && j.valor_centavos !== null ? Math.round(Number(j.valor_centavos)) : null,
+      data_hora: j.data_hora ? String(j.data_hora) : null,
+      pagador_nome: j.pagador_nome ? String(j.pagador_nome) : null,
+      recebedor_nome: j.recebedor_nome ? String(j.recebedor_nome) : null,
+      recebedor_chave: j.recebedor_chave ? String(j.recebedor_chave) : null,
+      id_transacao: j.id_transacao ? String(j.id_transacao) : null,
+      banco_pagador: j.banco_pagador ? String(j.banco_pagador) : null,
+      suspeito: j.suspeito === true,
+      motivo: j.motivo ? String(j.motivo) : null
+    };
+  } catch (e) {
+    return { erro: `Falha na IA (${cfg.provedor}): ${e.message}`.slice(0, 300) };
+  }
+}
 async function testarIA(cfg) {
   const r = await chamar2(cfg, 'Responda só com o JSON {"resposta": "ok", "concluido": false}.', [{ papel: "cliente", texto: "teste" }]);
   return r.texto.length > 0;
+}
+
+// supabase/functions/motor/comprovante.ts
+var MARCA_CHAVE = "__chave_pix";
+var VALIDADE_MARCA_MS = 3 * 864e5;
+var MAX_TENTATIVAS = 6;
+var VAZIAS = /* @__PURE__ */ new Set(["de", "da", "do", "das", "dos", "e", "d"]);
+function tokens(n) {
+  return normalizar(n).replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter((t) => t.length >= 2 && !VAZIAS.has(t));
+}
+function nomesBatem(a, b) {
+  const x = tokens(a ?? "");
+  const y = tokens(b ?? "");
+  if (!x.length || !y.length) return false;
+  if (x[0] !== y[0]) return false;
+  if (x.length === 1 || y.length === 1) return x.length === y.length;
+  return x.slice(1).some((t) => y.slice(1).includes(t));
+}
+function chaveEnviada(c) {
+  const em = c.campos?.[MARCA_CHAVE];
+  return Boolean(em && Date.now() - new Date(em).getTime() < VALIDADE_MARCA_MS);
+}
+function pareceChavePix(mensagem, texto2) {
+  const bruto = JSON.stringify(mensagem ?? {});
+  if (/payment_info|pix_key|"pixKey"|paymentInvite|merchant_name/i.test(bruto)) return true;
+  if (!/\bpix\b/i.test(texto2)) return false;
+  return /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(texto2) || // aleatória
+  /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(texto2) || // CPF
+  /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/.test(texto2) || // CNPJ
+  /[\w.+-]+@[\w-]+\.[\w.]+/.test(texto2) || // e-mail
+  /\(?\d{2}\)?\s?9?\d{4}-?\d{4}/.test(texto2);
+}
+async function falar(ctx, c, texto2) {
+  const s = { tipo: "texto", texto: texto2, esperaMs: 1500 };
+  await ctx.envio.enviar(c, s);
+  await ctx.store.registrarMensagemRobo(c, s);
+}
+async function baixarMidia(d2, instancia, waId) {
+  const r = await fetch(`${d2.evolution.url.replace(/\/+$/, "")}/chat/getBase64FromMediaMessage/${encodeURIComponent(instancia)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: d2.evolution.apikey },
+    body: JSON.stringify({ message: { key: { id: waId } }, convertToMp4: false }),
+    signal: AbortSignal.timeout(3e4)
+  });
+  if (!r.ok) throw new Error(`Evolution ${r.status}`);
+  const j = await r.json();
+  if (!j?.base64) throw new Error("mídia sem conteúdo");
+  return { base64: String(j.base64), mime: String(j.mimetype || "image/jpeg").split(";")[0] };
+}
+function diaBR(desloc = 0, base2) {
+  const t = base2 && /^\d{4}-\d{2}-\d{2}/.test(base2) ? (/* @__PURE__ */ new Date(`${base2.slice(0, 10)}T12:00:00-03:00`)).getTime() : Date.now() - 3 * 36e5;
+  return new Date(t + desloc * 864e5).toISOString().slice(0, 10);
+}
+var brl2 = (c) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+async function conferirComprovante(d2, donoId, c, dados) {
+  const ctx = d2.ctx(donoId, c);
+  const tentativa = Number(dados.tentativa ?? 0);
+  const gw = await configGateway(d2.db, donoId);
+  if (!gw || gw.gateway !== "asaas") {
+    await ctx.store.avisarDono(c, "Chegou um comprovante, mas a conferência automática só funciona com o Asaas. Confira e entregue pelo 📦 no Conversas.");
+    return;
+  }
+  let leitura = dados.leitura;
+  if (!leitura) {
+    const { data: num } = await d2.db.from("numeros").select("instancia").eq("id", c.numero_id ?? "").maybeSingle();
+    if (!num) return;
+    let midia;
+    try {
+      midia = await baixarMidia(d2, num.instancia, String(dados.wa_id));
+    } catch (e) {
+      ctx.log?.(`comprovante: não baixei a mídia (${e.message})`);
+      return;
+    }
+    const r = await lerComprovante(d2.db, donoId, c.id, midia.base64, midia.mime);
+    if ("erro" in r) {
+      await ctx.store.avisarDono(c, `Chegou um comprovante e a IA não conseguiu ler (${r.erro}). Confira e entregue pelo 📦 no Conversas.`);
+      return;
+    }
+    leitura = r;
+  }
+  if (!leitura.e_comprovante_pix || !leitura.valor_centavos) return;
+  const recebidos = await pixRecebidosAsaas(gw, diaBR(-1, leitura.data_hora), diaBR(1, leitura.data_hora));
+  const candidatos = recebidos.filter((p) => !p.pixQrCodeId && Math.round(Number(p.value) * 100) === leitura.valor_centavos);
+  let achado = null;
+  if (candidatos.length) {
+    const { data: usados } = await d2.db.from("pagamentos").select("gateway_id").eq("gateway", "asaas").in("gateway_id", candidatos.map((p) => p.id));
+    const jaUsados = new Set((usados ?? []).map((u) => u.gateway_id));
+    for (const p of candidatos.filter((x) => !jaUsados.has(x.id))) {
+      const nome = await nomeClienteAsaas(gw, p.customer).catch(() => "");
+      if (nomesBatem(nome, leitura.pagador_nome)) {
+        achado = p;
+        break;
+      }
+    }
+  }
+  if (!achado) {
+    if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
+    if (tentativa + 1 < MAX_TENTATIVAS) {
+      await d2.agendar(c, new Date(Date.now() + 3 * 6e4), { wa_id: dados.wa_id, tentativa: tentativa + 1, leitura });
+      return;
+    }
+    await falar(ctx, c, "Ainda não consegui confirmar seu Pix por aqui 🙏 Já avisei a equipe e em instantes te respondem, tá?");
+    await ctx.store.avisarDono(
+      c,
+      `Comprovante não confirmado no Asaas: ${brl2(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}${leitura.suspeito ? " (a IA achou o comprovante suspeito)" : ""}. Confira e, se estiver certo, entregue pelo 📦 no Conversas.`
+    );
+    return;
+  }
+  await registrarPago(d2, ctx, donoId, c, achado.id, leitura.valor_centavos);
+}
+async function registrarPago(d2, ctx, donoId, c, asaasId, valor) {
+  const campos = { ...c.campos };
+  delete campos[MARCA_CHAVE];
+  await d2.db.from("contatos").update({ campos, robo_ativo: true, robo_retomar_em: null }).eq("id", c.id);
+  Object.assign(c, { campos, robo_ativo: true });
+  if (c.pix_ativo) {
+    const { data: pg } = await d2.db.from("pagamentos").select("id, valor_centavos").eq("id", c.pix_ativo.pagamento_id).maybeSingle();
+    if (pg && Math.abs(pg.valor_centavos - valor) <= 1) {
+      await d2.db.from("pagamentos").update({ gateway: "asaas", gateway_id: asaasId }).eq("id", pg.id);
+      await d2.db.from("pagamentos").update({ status: "pago", pago_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", pg.id).eq("status", "pendente");
+      await pixPago(ctx, c, pg.id);
+      return;
+    }
+  }
+  const funilId = c.funil_id;
+  const funil = funilId ? await ctx.store.funil(funilId) : null;
+  const { data: produtos } = await d2.db.from("produtos").select("id, preco_centavos").eq("dono_id", donoId).eq("ativo", true);
+  const doPreco = (produtos ?? []).filter((p2) => Math.abs(p2.preco_centavos - valor) <= 1).map((p2) => p2.id);
+  const blocoPix = funil?.grafo.nodes.find((n) => n.data.tipo === "pix" && doPreco.includes(String(n.data.config?.produtoId ?? "")));
+  const produtoId = blocoPix ? String(blocoPix.data.config?.produtoId) : doPreco[0] ?? null;
+  const { data: novo } = await d2.db.from("pagamentos").insert({ dono_id: donoId, contato_id: c.id, produto_id: produtoId, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway: "asaas", gateway_id: asaasId, simulacao: false }).select("id").single();
+  if (!novo) return;
+  await d2.db.from("pagamentos").update({ status: "pago", pago_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", novo.id);
+  if (blocoPix && funil) {
+    const pixAtivo = { bloco: blocoPix.id, pagamento_id: novo.id, funil_id: funil.id, tipo: "principal" };
+    await d2.db.from("contatos").update({ pix_ativo: pixAtivo }).eq("id", c.id);
+    c.pix_ativo = pixAtivo;
+    await pixPago(ctx, c, novo.id);
+    return;
+  }
+  const { data: p } = produtoId ? await d2.db.from("produtos").select("nome, entrega_tipo, entrega_conteudo, mensagem_entrega").eq("id", produtoId).maybeSingle() : { data: null };
+  if (p?.entrega_conteudo) {
+    await falar(ctx, c, preencher(p.mensagem_entrega || "Pagamento confirmado! 🙏 Aqui está o seu {produto} 👇", c, { produto: p.nome }));
+    const s = p.entrega_tipo === "arquivo" ? { tipo: "arquivo", url: p.entrega_conteudo, nome: p.nome, esperaMs: 1500 } : { tipo: "texto", texto: p.entrega_conteudo, esperaMs: 1200 };
+    await ctx.envio.enviar(c, s);
+    await ctx.store.registrarMensagemRobo(c, s);
+  } else {
+    await falar(ctx, c, "Pagamento confirmado! Muito obrigado 🙏");
+  }
+  await ctx.store.avisarDono(c, `Pix de ${brl2(valor)} confirmado pelo comprovante, mas não achei o produto desse valor no funil. Confira se a entrega está certa.`);
 }
 
 // supabase/functions/motor/disparos.ts
@@ -2244,6 +2483,12 @@ async function evolution(req, cfg) {
   const donoId = numero.dono_id;
   let { data: linha } = await db.from("contatos").select(CAMPOS_CONTATO).eq("dono_id", donoId).eq("telefone", telefone).maybeSingle();
   if (d2.key?.fromMe) {
+    if (linha && pareceChavePix(d2.message, texto2)) {
+      const campos = { ...linha.campos ?? {}, [MARCA_CHAVE]: (/* @__PURE__ */ new Date()).toISOString() };
+      await db.from("contatos").update({ campos }).eq("id", linha.id);
+      linha.campos = campos;
+      await db.from("contatos").update({ robo_ativo: false, robo_retomar_em: new Date(Date.now() + RETOMAR_MS).toISOString() }).eq("id", linha.id).or("robo_ativo.eq.true,robo_retomar_em.not.is.null");
+    }
     if (linha && texto2.trim()) {
       const { data: ult } = await db.from("mensagens").select("conteudo").eq("contato_id", linha.id).in("autor", ["robo", "humano"]).gte("criado_em", new Date(Date.now() - 12e4).toISOString());
       const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto2.trim());
@@ -2266,6 +2511,12 @@ async function evolution(req, cfg) {
   }
   const contato = linhaParaContato(linha);
   await db.from("mensagens").insert({ dono_id: donoId, contato_id: contato.id, autor: "cliente", tipo: "texto", conteudo: texto2, wa_id: d2.key?.id });
+  const ehMidia = Boolean(d2.message?.imageMessage || d2.message?.documentMessage || d2.message?.documentWithCaptionMessage);
+  if (ehMidia && chaveEnviada(contato) && d2.key?.id) {
+    await db.from("agendamentos").insert({ dono_id: donoId, contato_id: contato.id, tipo: "comprovante", executar_em: (/* @__PURE__ */ new Date()).toISOString(), dados: { wa_id: d2.key.id, tentativa: 0 } });
+    await db.from("contatos").update({ ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString(), numero_id: numero.id }).eq("id", contato.id);
+    return json({ ok: true, comprovante: true });
+  }
   await db.from("contatos").update({ ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString(), numero_id: numero.id }).eq("id", contato.id);
   const tresDias = new Date(Date.now() - 3 * 864e5).toISOString();
   await db.from("campanha_envios").update({ respondeu_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("contato_id", contato.id).eq("status", "enviado").is("respondeu_em", null).gte("enviado_em", tresDias);
@@ -2346,7 +2597,21 @@ async function relogio(req, cfg) {
       const contato = await carregarContato(a.contato_id);
       if (!contato) return;
       const ctx = ctxPara(a.dono_id, contato.simulacao, cfg);
-      if (a.tipo === "pix_pago") {
+      if (a.tipo === "comprovante") {
+        await conferirComprovante(
+          {
+            db,
+            evolution: { url: cfg.evolution_url ?? "", apikey: cfg.evolution_apikey ?? "" },
+            ctx: (dono, c) => ctxPara(dono, c.simulacao, cfg),
+            agendar: async (c, em, dados) => {
+              await db.from("agendamentos").insert({ dono_id: a.dono_id, contato_id: c.id, tipo: "comprovante", executar_em: em.toISOString(), dados });
+            }
+          },
+          a.dono_id,
+          contato,
+          a.dados ?? {}
+        );
+      } else if (a.tipo === "pix_pago") {
         await pixPago(ctx, contato, String(a.dados?.pagamento_id ?? ""));
       } else if (a.tipo === "reprocessar") {
         await receberMensagem(ctx, contato, () => funilPadraoDe(a.dono_id, contato, String(a.dados?.texto ?? "")), String(a.dados?.texto ?? ""), { atrasada: true });
