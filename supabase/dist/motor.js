@@ -576,9 +576,10 @@ ${lista}`);
     }
     case "objecoes": {
       const pergunta = querInformacao(texto2);
-      if (!negou(texto2) && !pergunta && (contemAlguma(texto2, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto2), palavras(cfg.palavrasCompra)))) return seguir("comprar");
+      const primeiraDoAtendente = Boolean(ag.atendente) && ag.tentativas === 0 && Boolean(ctx.ia);
+      if (!primeiraDoAtendente && !negou(texto2) && !pergunta && (contemAlguma(texto2, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto2), palavras(cfg.palavrasCompra)))) return seguir("comprar");
       const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto2, palavras(o.palavras)));
-      if (obj?.resposta) return repetir(obj.resposta);
+      if (obj?.resposta && !primeiraDoAtendente) return repetir(obj.resposta);
       const reacao = !(ag.atendente && ctx.ia) && ehReacao(texto2);
       if (op.atrasada && (reacao || normalizar(texto2).length < 15)) return;
       if (reacao) {
@@ -589,7 +590,7 @@ ${lista}`);
         const r = await ctx.ia(c, configIAObjecoes(cfg, Boolean(ag.atendente)));
         if (!("erro" in r)) {
           await enviarRespostaIA(ctx, c, r.resposta, false);
-          if (r.concluido && aceitou(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
+          if (r.concluido && !primeiraDoAtendente && aceitou(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
           await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
           return;
         }
@@ -695,7 +696,7 @@ function configIAObjecoes(cfg, atendente = false) {
   return {
     instrucoes: [
       cfg.iaInstrucoes || "Você é a pessoa que vende este produto no WhatsApp: simpática, acolhedora e direta.",
-      atendente ? "Você atende este cliente desde a primeira mensagem (ele veio do anúncio). Na primeira resposta, cumprimente, apresente o produto em poucas linhas (o que é, o que vem e o preço) e pergunte algo para entender o que ele procura. Depois, responda exatamente o que ele disser, com naturalidade. Mensagens curtas, como no WhatsApp." : "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
+      atendente ? 'Você atende este cliente desde a primeira mensagem (ele veio do anúncio). A primeira mensagem dele costuma ser automática do anúncio (ex.: "Quero o caderno fácil"), então NÃO trate como compra: na primeira resposta, cumprimente, explique o produto em poucas linhas (o que é, o que vem e o preço) e pergunte se ele quer que você já mande o Pix. Depois, responda exatamente o que ele disser, com naturalidade. Mensagens curtas, como no WhatsApp.' : "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
       "Se fizer sentido, termine com uma pergunta curta convidando a gerar o Pix (sem repetir a mesma frase de antes).",
       "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto."
     ].join("\n"),
