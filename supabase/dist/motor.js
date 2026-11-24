@@ -105,6 +105,7 @@ function tipoDaChave(chave) {
   if (d2.length === 11 && /[.-]/.test(k)) return "cpf";
   return d2.length === 11 ? "cpf" : "random";
 }
+var NOME_TIPO_CHAVE = { email: "e-mail", cpf: "CPF", cnpj: "CNPJ", phone: "celular", random: "aleatória" };
 var MSG_COMPROVANTE = "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!";
 function blocoAtendente(funil) {
   const inicio = funil.grafo.nodes.find((n) => n.data.tipo === "inicio");
@@ -354,12 +355,12 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
             rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
             esperaMs: 800
           });
+          if (cfg.chaveEmTexto !== false) await enviar(ctx, c, { tipo: "texto", texto: `Se o botão não aparecer aí, a chave Pix (${NOME_TIPO_CHAVE[tipoDaChave(chaveWpp)]}) é:`, esperaMs: 1500 });
+          if (cfg.chaveEmTexto !== false) await enviar(ctx, c, { tipo: "texto", texto: chaveWpp, esperaMs: 900 });
         } catch (e) {
           ctx.log?.(`botão de Pix do WhatsApp falhou, mandando a chave em texto: ${e.message}`);
-          await enviar(ctx, c, { tipo: "texto", texto: `Chave Pix: *${chaveWpp}*
-Valor: *${brl(cobrado.preco_centavos)}*
-
-Depois de pagar, me manda o comprovante aqui 🙏`, esperaMs: 800 });
+          await enviar(ctx, c, { tipo: "texto", texto: `Chave Pix (${NOME_TIPO_CHAVE[tipoDaChave(chaveWpp)]}) para pagar *${brl(cobrado.preco_centavos)}* 👇`, esperaMs: 800 });
+          await enviar(ctx, c, { tipo: "texto", texto: chaveWpp, esperaMs: 900 });
         }
         await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
       } else if (pix.link) {

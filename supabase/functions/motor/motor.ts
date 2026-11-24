@@ -255,6 +255,7 @@ export function tipoDaChave(chave: string): TipoChave {
   if (d.length === 11 && /[.-]/.test(k)) return "cpf";
   return d.length === 11 ? "cpf" : "random";
 }
+const NOME_TIPO_CHAVE: Record<TipoChave, string> = { email: "e-mail", cpf: "CPF", cnpj: "CNPJ", phone: "celular", random: "aleatória" };
 export const MSG_COMPROVANTE = "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!";
 
 type Resultado = { saida: string } | { espera: Aguardando } | { parar: true; finalizar?: boolean };
@@ -541,10 +542,14 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
             rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
             esperaMs: 800,
           });
+          // o WhatsApp não mostra o botão em todo celular (e não avisa quando some): a chave vai escrita também
+          if (cfg.chaveEmTexto !== false) await enviar(ctx, c, { tipo: "texto", texto: `Se o botão não aparecer aí, a chave Pix (${NOME_TIPO_CHAVE[tipoDaChave(chaveWpp)]}) é:`, esperaMs: 1500 });
+          if (cfg.chaveEmTexto !== false) await enviar(ctx, c, { tipo: "texto", texto: chaveWpp, esperaMs: 900 });
         } catch (e) {
           // botão não saiu: manda a chave escrita
           ctx.log?.(`botão de Pix do WhatsApp falhou, mandando a chave em texto: ${(e as Error).message}`);
-          await enviar(ctx, c, { tipo: "texto", texto: `Chave Pix: *${chaveWpp}*\nValor: *${brl(cobrado.preco_centavos)}*\n\nDepois de pagar, me manda o comprovante aqui 🙏`, esperaMs: 800 });
+          await enviar(ctx, c, { tipo: "texto", texto: `Chave Pix (${NOME_TIPO_CHAVE[tipoDaChave(chaveWpp)]}) para pagar *${brl(cobrado.preco_centavos)}* 👇`, esperaMs: 800 });
+          await enviar(ctx, c, { tipo: "texto", texto: chaveWpp, esperaMs: 900 });
         }
         await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
       } else if (pix.link) {
