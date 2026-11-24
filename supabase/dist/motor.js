@@ -1702,7 +1702,7 @@ async function lerComprovante(db2, donoId, contatoId, base64, mime) {
     let entrada = 0;
     let saida = 0;
     if (cfg.provedor === "gemini") {
-      const modelos = [.../* @__PURE__ */ new Set([cfg.modelo, "gemini-flash-latest", "gemini-2.5-flash"])];
+      const modelos = [cfg.modelo, cfg.modelo, cfg.modelo, "gemini-flash-latest", cfg.modelo];
       let j2 = {};
       let ultimoErro = "";
       for (const modelo of modelos) {
@@ -1721,6 +1721,7 @@ async function lerComprovante(db2, donoId, contatoId, base64, mime) {
           break;
         }
         ultimoErro = j2?.error?.message ?? `Gemini ${r.status}`;
+        await new Promise((ok) => setTimeout(ok, 2e3));
         if (!(r.status === 503 || r.status === 429 || r.status === 500 || /demand|overload|unavailable/i.test(ultimoErro))) break;
       }
       if (ultimoErro) throw new Error(ultimoErro);

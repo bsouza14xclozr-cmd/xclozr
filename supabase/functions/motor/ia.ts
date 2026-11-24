@@ -223,7 +223,8 @@ export async function lerComprovante(db: SupabaseClient, donoId: string, contato
     let saida = 0;
     if (cfg.provedor === "gemini") {
       // modelo sobrecarregado ("high demand"/503): tenta outros modelos Gemini antes de desistir
-      const modelos = [...new Set([cfg.modelo, "gemini-flash-latest", "gemini-2.5-flash"])];
+      // o pico de demanda do Google costuma passar em segundos: tenta o mesmo modelo de novo antes de trocar
+      const modelos = [cfg.modelo, cfg.modelo, cfg.modelo, "gemini-flash-latest", cfg.modelo];
       let j: any = {};
       let ultimoErro = "";
       for (const modelo of modelos) {
@@ -242,6 +243,7 @@ export async function lerComprovante(db: SupabaseClient, donoId: string, contato
           break;
         }
         ultimoErro = j?.error?.message ?? `Gemini ${r.status}`;
+        await new Promise((ok) => setTimeout(ok, 2000));
         if (!(r.status === 503 || r.status === 429 || r.status === 500 || /demand|overload|unavailable/i.test(ultimoErro))) break;
       }
       if (ultimoErro) throw new Error(ultimoErro);
