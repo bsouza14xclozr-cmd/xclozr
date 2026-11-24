@@ -102,6 +102,12 @@ export async function conferirComprovante(d: Deps, donoId: string, c: M.Contato 
     }
     const r = await lerComprovante(d.db, donoId, c.id, midia.base64, midia.mime);
     if ("erro" in r) {
+      // IA fora do ar / sobrecarregada: tenta de novo em 2 min (até 4 vezes) antes de passar para você
+      if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
+      if (tentativa + 1 < 5) {
+        await d.agendar(c, new Date(Date.now() + 2 * 60_000), { wa_id: dados.wa_id, tentativa: tentativa + 1 });
+        return;
+      }
       await ctx.store.avisarDono(c, `Chegou um comprovante e a IA não conseguiu ler (${r.erro}). Confira e entregue pelo 📦 no Conversas.`);
       return;
     }
@@ -146,7 +152,7 @@ export async function conferirComprovante(d: Deps, donoId: string, c: M.Contato 
   const problemas = problemasDoComprovante(leitura, { esperados, chave, usado, agora: new Date() });
   if (!problemas.length) return registrarPago(d, ctx, donoId, c, "chave", leitura.id_transacao, leitura.valor_centavos);
 
-  await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro e te respondo, tá?");
+  if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro e te respondo, tá?");
   await ctx.store.avisarDono(
     c,
     `Comprovante para conferir: ${brl(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}. A IA não liberou: ${problemas.join("; ")}. Confira no seu banco e, se caiu, entregue pelo 📦 no Conversas.`,

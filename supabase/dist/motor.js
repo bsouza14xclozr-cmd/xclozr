@@ -1841,6 +1841,11 @@ async function conferirComprovante(d2, donoId, c, dados) {
     }
     const r = await lerComprovante(d2.db, donoId, c.id, midia.base64, midia.mime);
     if ("erro" in r) {
+      if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
+      if (tentativa + 1 < 5) {
+        await d2.agendar(c, new Date(Date.now() + 2 * 6e4), { wa_id: dados.wa_id, tentativa: tentativa + 1 });
+        return;
+      }
       await ctx.store.avisarDono(c, `Chegou um comprovante e a IA não conseguiu ler (${r.erro}). Confira e entregue pelo 📦 no Conversas.`);
       return;
     }
@@ -1875,7 +1880,7 @@ async function conferirComprovante(d2, donoId, c, dados) {
   }
   const problemas = problemasDoComprovante(leitura, { esperados, chave, usado, agora: /* @__PURE__ */ new Date() });
   if (!problemas.length) return registrarPago(d2, ctx, donoId, c, "chave", leitura.id_transacao, leitura.valor_centavos);
-  await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro e te respondo, tá?");
+  if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro e te respondo, tá?");
   await ctx.store.avisarDono(
     c,
     `Comprovante para conferir: ${brl2(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}. A IA não liberou: ${problemas.join("; ")}. Confira no seu banco e, se caiu, entregue pelo 📦 no Conversas.`
