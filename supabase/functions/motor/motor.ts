@@ -80,7 +80,8 @@ export interface Store {
   cancelarAgendamentos(c: Contato, tipos?: string[]): Promise<void>;
   registrarExecucao(c: Contato, funilId: string, blocoId: string, saida: string | null): Promise<void>;
   registrarMensagemRobo(c: Contato, s: Saida): Promise<void>;
-  criarPix(c: Contato, produto: Produto, expiraMin: number, tipo: "principal" | "upsell"): Promise<{ id: string; copiaCola: string; qrBase64?: string | null; link?: string | null }>;
+  /** manual: Pix pela chave (outro banco), sem cobrança no gateway: só registra o pagamento pendente. */
+  criarPix(c: Contato, produto: Produto, expiraMin: number, tipo: "principal" | "upsell", manual?: boolean): Promise<{ id: string; copiaCola: string; qrBase64?: string | null; link?: string | null }>;
   pagamentoPendente(c: Contato): Promise<boolean>;
   jaComprou(c: Contato): Promise<boolean>;
   marcarPixExpirado(pagamentoId: string): Promise<void>;
@@ -505,9 +506,12 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
       const bumpId = tipoPix === "principal" && c.campos.__bump ? String(c.campos.__bump) : null;
       const bump = bumpId && bumpId !== produto.id ? await ctx.store.produto(bumpId) : null;
       const cobrado: Produto = bump ? { ...produto, nome: `${produto.nome} + ${bump.nome}`, preco_centavos: produto.preco_centavos + bump.preco_centavos } : produto;
+      // dois jeitos de cobrar: "asaas" (copia e cola, confirma sozinho) ou "chave" (botão de Pix do WhatsApp com a sua chave de outro banco; a IA confere o comprovante)
+      const chaveWpp = String(cfg.chaveWhatsApp ?? "").trim();
+      const modoChave = cfg.modoPix === "chave" && Boolean(chaveWpp);
       let pix: Awaited<ReturnType<Store["criarPix"]>>;
       try {
-        pix = await ctx.store.criarPix(c, cobrado, expira, tipoPix);
+        pix = await ctx.store.criarPix(c, cobrado, expira, tipoPix, modoChave);
       } catch (e) {
         // não deixa o cliente sem resposta: avisa, passa para humano e alerta o dono
         ctx.log?.(`falha ao gerar Pix: ${(e as Error).message}`);
@@ -520,34 +524,30 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         return { parar: true, finalizar: true };
       }
       await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: cobrado.nome, preco: brl(cobrado.preco_centavos) }));
-      if (pix.link) {
+      if (modoChave) {
+        try {
+          await enviar(ctx, c, {
+            tipo: "botao_pix",
+            titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
+            texto: `${cobrado.nome} · valor: ${brl(cobrado.preco_centavos)}`,
+            chave: chaveWpp,
+            tipoChave: tipoDaChave(chaveWpp),
+            nome: String(cfg.nomeRecebedor || cobrado.nome).slice(0, 25),
+            rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
+            esperaMs: 800,
+          });
+        } catch (e) {
+          // botão não saiu: manda a chave escrita
+          ctx.log?.(`botão de Pix do WhatsApp falhou, mandando a chave em texto: ${(e as Error).message}`);
+          await enviar(ctx, c, { tipo: "texto", texto: `Chave Pix: *${chaveWpp}*\nValor: *${brl(cobrado.preco_centavos)}*\n\nDepois de pagar, me manda o comprovante aqui 🙏`, esperaMs: 800 });
+        }
+        await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
+      } else if (pix.link) {
         // gateway de link (LivePix): a página tem o Pix copia e cola e o QR Code
         await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):\n${pix.link}`, esperaMs: 800 });
       } else {
         let foiBotao = false;
-        const chaveWpp = String(cfg.chaveWhatsApp ?? "").trim();
-        if (cfg.botaoPixWhatsApp && chaveWpp) {
-          // botão nativo de Pix do WhatsApp com a chave: o cliente paga pela chave e manda o comprovante (a IA confere no Asaas)
-          try {
-            await enviar(ctx, c, {
-              tipo: "botao_pix",
-              titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
-              texto: `${cobrado.nome} · valor: ${brl(cobrado.preco_centavos)}`,
-              chave: chaveWpp,
-              tipoChave: tipoDaChave(chaveWpp),
-              nome: String(cfg.nomeRecebedor || cobrado.nome).slice(0, 25),
-              rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
-              esperaMs: 800,
-            });
-            foiBotao = true;
-            await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
-          } catch (e) {
-            ctx.log?.(`botão de Pix do WhatsApp falhou, mandando o copia e cola: ${(e as Error).message}`);
-          }
-          if (foiBotao && cfg.codigoTambem !== false) {
-            await enviar(ctx, c, { tipo: "texto", texto: "Se preferir, aqui está o Pix *copia e cola* 👇", esperaMs: 1200 });
-          }
-        } else if (cfg.botaoCopiar) {
+        if (cfg.botaoCopiar) {
           // botão "📋 Copiar código Pix": o cliente toca e cola no banco (o código é o mesmo do gateway, a confirmação continua automática)
           try {
             await enviar(ctx, c, {

@@ -95,12 +95,12 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
       await db.from("contatos").update({ ultima_msg_em: new Date().toISOString() }).eq("id", c.id);
     },
 
-    async criarPix(c, produto, expiraMin, tipo) {
+    async criarPix(c, produto, expiraMin, tipo, manual) {
       const { data: cfg } = await db.from("configuracoes").select("taxa_percentual, taxa_fixa_centavos").eq("dono_id", donoId).maybeSingle();
       const taxa = cfg ? Math.round((produto.preco_centavos * Number(cfg.taxa_percentual)) / 100) + (cfg.taxa_fixa_centavos ?? 0) : 0;
 
-      const gw = c.simulacao ? null : await configGateway(db, donoId);
-      if (!c.simulacao && !gw) throw new Error("nenhum gateway conectado (Produtos → Gateway de Pix)");
+      const gw = c.simulacao || manual ? null : await configGateway(db, donoId);
+      if (!c.simulacao && !manual && !gw) throw new Error("nenhum gateway conectado (Produtos → Gateway de Pix)");
       const { data: anuncio } = await db.from("contatos").select("anuncio_id").eq("id", c.id).maybeSingle();
       const { data, error } = await db
         .from("pagamentos")
@@ -113,12 +113,14 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
           valor_centavos: produto.preco_centavos,
           taxa_centavos: taxa,
           status: "pendente",
-          gateway: c.simulacao ? "simulacao" : gw!.gateway,
+          gateway: c.simulacao ? "simulacao" : manual ? "chave" : gw!.gateway,
           simulacao: c.simulacao,
         })
         .select("id")
         .single();
       if (error || !data) throw new Error("falha ao criar pagamento");
+      // Pix pela chave (outro banco): não existe cobrança no gateway; quem confirma é a conferência do comprovante
+      if (manual) return { id: data.id, copiaCola: "" };
       if (c.simulacao) {
         const copiaCola = `00020126SIMULACAO-XCLOZR-${data.id.slice(0, 8)}5204000053039865802BR (Pix de teste, não pague)`;
         await db.from("pagamentos").update({ pix_copia_cola: copiaCola }).eq("id", data.id);

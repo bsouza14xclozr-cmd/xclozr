@@ -322,9 +322,11 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
       const bumpId = tipoPix === "principal" && c.campos.__bump ? String(c.campos.__bump) : null;
       const bump = bumpId && bumpId !== produto.id ? await ctx.store.produto(bumpId) : null;
       const cobrado = bump ? { ...produto, nome: `${produto.nome} + ${bump.nome}`, preco_centavos: produto.preco_centavos + bump.preco_centavos } : produto;
+      const chaveWpp = String(cfg.chaveWhatsApp ?? "").trim();
+      const modoChave = cfg.modoPix === "chave" && Boolean(chaveWpp);
       let pix;
       try {
-        pix = await ctx.store.criarPix(c, cobrado, expira, tipoPix);
+        pix = await ctx.store.criarPix(c, cobrado, expira, tipoPix, modoChave);
       } catch (e) {
         ctx.log?.(`falha ao gerar Pix: ${e.message}`);
         await enviarTexto(ctx, c, "Só um instante, já te mando o Pix 🙏");
@@ -336,33 +338,32 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
         return { parar: true, finalizar: true };
       }
       await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: cobrado.nome, preco: brl(cobrado.preco_centavos) }));
-      if (pix.link) {
+      if (modoChave) {
+        try {
+          await enviar(ctx, c, {
+            tipo: "botao_pix",
+            titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
+            texto: `${cobrado.nome} · valor: ${brl(cobrado.preco_centavos)}`,
+            chave: chaveWpp,
+            tipoChave: tipoDaChave(chaveWpp),
+            nome: String(cfg.nomeRecebedor || cobrado.nome).slice(0, 25),
+            rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
+            esperaMs: 800
+          });
+        } catch (e) {
+          ctx.log?.(`botão de Pix do WhatsApp falhou, mandando a chave em texto: ${e.message}`);
+          await enviar(ctx, c, { tipo: "texto", texto: `Chave Pix: *${chaveWpp}*
+Valor: *${brl(cobrado.preco_centavos)}*
+
+Depois de pagar, me manda o comprovante aqui 🙏`, esperaMs: 800 });
+        }
+        await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
+      } else if (pix.link) {
         await enviar(ctx, c, { tipo: "texto", texto: `👉 Toque no link para abrir o Pix (o código *copia e cola* e o QR Code estão lá):
 ${pix.link}`, esperaMs: 800 });
       } else {
         let foiBotao = false;
-        const chaveWpp = String(cfg.chaveWhatsApp ?? "").trim();
-        if (cfg.botaoPixWhatsApp && chaveWpp) {
-          try {
-            await enviar(ctx, c, {
-              tipo: "botao_pix",
-              titulo: `💠 Pix de ${brl(cobrado.preco_centavos)}`,
-              texto: `${cobrado.nome} · valor: ${brl(cobrado.preco_centavos)}`,
-              chave: chaveWpp,
-              tipoChave: tipoDaChave(chaveWpp),
-              nome: String(cfg.nomeRecebedor || cobrado.nome).slice(0, 25),
-              rodape: "Depois de pagar, me manda o comprovante aqui 🙏",
-              esperaMs: 800
-            });
-            foiBotao = true;
-            await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
-          } catch (e) {
-            ctx.log?.(`botão de Pix do WhatsApp falhou, mandando o copia e cola: ${e.message}`);
-          }
-          if (foiBotao && cfg.codigoTambem !== false) {
-            await enviar(ctx, c, { tipo: "texto", texto: "Se preferir, aqui está o Pix *copia e cola* 👇", esperaMs: 1200 });
-          }
-        } else if (cfg.botaoCopiar) {
+        if (cfg.botaoCopiar) {
           try {
             await enviar(ctx, c, {
               tipo: "botao_copiar",
@@ -1116,11 +1117,11 @@ ${s.texto}
       });
       await db2.from("contatos").update({ ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", c.id);
     },
-    async criarPix(c, produto, expiraMin, tipo) {
+    async criarPix(c, produto, expiraMin, tipo, manual) {
       const { data: cfg } = await db2.from("configuracoes").select("taxa_percentual, taxa_fixa_centavos").eq("dono_id", donoId).maybeSingle();
       const taxa = cfg ? Math.round(produto.preco_centavos * Number(cfg.taxa_percentual) / 100) + (cfg.taxa_fixa_centavos ?? 0) : 0;
-      const gw = c.simulacao ? null : await configGateway(db2, donoId);
-      if (!c.simulacao && !gw) throw new Error("nenhum gateway conectado (Produtos → Gateway de Pix)");
+      const gw = c.simulacao || manual ? null : await configGateway(db2, donoId);
+      if (!c.simulacao && !manual && !gw) throw new Error("nenhum gateway conectado (Produtos → Gateway de Pix)");
       const { data: anuncio2 } = await db2.from("contatos").select("anuncio_id").eq("id", c.id).maybeSingle();
       const { data, error } = await db2.from("pagamentos").insert({
         dono_id: donoId,
@@ -1131,10 +1132,11 @@ ${s.texto}
         valor_centavos: produto.preco_centavos,
         taxa_centavos: taxa,
         status: "pendente",
-        gateway: c.simulacao ? "simulacao" : gw.gateway,
+        gateway: c.simulacao ? "simulacao" : manual ? "chave" : gw.gateway,
         simulacao: c.simulacao
       }).select("id").single();
       if (error || !data) throw new Error("falha ao criar pagamento");
+      if (manual) return { id: data.id, copiaCola: "" };
       if (c.simulacao) {
         const copiaCola = `00020126SIMULACAO-XCLOZR-${data.id.slice(0, 8)}5204000053039865802BR (Pix de teste, não pague)`;
         await db2.from("pagamentos").update({ pix_copia_cola: copiaCola }).eq("id", data.id);
@@ -1820,10 +1822,6 @@ async function conferirComprovante(d2, donoId, c, dados) {
   const ctx = d2.ctx(donoId, c);
   const tentativa = Number(dados.tentativa ?? 0);
   const gw = await configGateway(d2.db, donoId);
-  if (!gw || gw.gateway !== "asaas") {
-    await ctx.store.avisarDono(c, "Chegou um comprovante, mas a conferência automática só funciona com o Asaas. Confira e entregue pelo 📦 no Conversas.");
-    return;
-  }
   let leitura = dados.leitura;
   if (!leitura) {
     const { data: num } = await d2.db.from("numeros").select("instancia").eq("id", c.numero_id ?? "").maybeSingle();
@@ -1843,36 +1841,75 @@ async function conferirComprovante(d2, donoId, c, dados) {
     leitura = r;
   }
   if (!leitura.e_comprovante_pix || !leitura.valor_centavos) return;
-  const recebidos = await pixRecebidosAsaas(gw, diaBR(-1, leitura.data_hora), diaBR(1, leitura.data_hora));
-  const candidatos = recebidos.filter((p) => !p.pixQrCodeId && Math.round(Number(p.value) * 100) === leitura.valor_centavos);
-  let achado = null;
-  if (candidatos.length) {
-    const { data: usados } = await d2.db.from("pagamentos").select("gateway_id").eq("gateway", "asaas").in("gateway_id", candidatos.map((p) => p.id));
-    const jaUsados = new Set((usados ?? []).map((u) => u.gateway_id));
-    for (const p of candidatos.filter((x) => !jaUsados.has(x.id))) {
-      const nome = await nomeClienteAsaas(gw, p.customer).catch(() => "");
-      if (nomesBatem(nome, leitura.pagador_nome)) {
-        achado = p;
-        break;
-      }
-    }
-  }
-  if (!achado) {
-    if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
+  const { data: pg } = c.pix_ativo ? await d2.db.from("pagamentos").select("id, valor_centavos, gateway").eq("id", c.pix_ativo.pagamento_id).maybeSingle() : { data: null };
+  const pelaChave = pg?.gateway === "chave";
+  if (!pelaChave && gw?.gateway === "asaas") {
+    const achado = await procurarNoAsaas(d2, gw, leitura);
+    if (achado) return registrarPago(d2, ctx, donoId, c, "asaas", achado.id, leitura.valor_centavos);
     if (tentativa + 1 < MAX_TENTATIVAS) {
+      if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
       await d2.agendar(c, new Date(Date.now() + 3 * 6e4), { wa_id: dados.wa_id, tentativa: tentativa + 1, leitura });
       return;
     }
-    await falar(ctx, c, "Ainda não consegui confirmar seu Pix por aqui 🙏 Já avisei a equipe e em instantes te respondem, tá?");
-    await ctx.store.avisarDono(
-      c,
-      `Comprovante não confirmado no Asaas: ${brl2(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}${leitura.suspeito ? " (a IA achou o comprovante suspeito)" : ""}. Confira e, se estiver certo, entregue pelo 📦 no Conversas.`
-    );
-    return;
   }
-  await registrarPago(d2, ctx, donoId, c, achado.id, leitura.valor_centavos);
+  let chave = "";
+  if (c.pix_ativo && c.funil_id) {
+    const funil = await ctx.store.funil(c.pix_ativo.funil_id);
+    chave = String(funil?.grafo.nodes.find((n) => n.id === c.pix_ativo.bloco)?.data.config?.chaveWhatsApp ?? "");
+  }
+  let esperados = pg ? [pg.valor_centavos] : [];
+  if (!pg) {
+    const { data: produtos } = await d2.db.from("produtos").select("preco_centavos").eq("dono_id", donoId).eq("ativo", true);
+    esperados = (produtos ?? []).map((p) => p.preco_centavos);
+  }
+  let usado = false;
+  if (leitura.id_transacao) {
+    const { data: u } = await d2.db.from("pagamentos").select("id").eq("dono_id", donoId).eq("gateway", "chave").eq("gateway_id", leitura.id_transacao).limit(1);
+    usado = Boolean(u?.length);
+  }
+  const problemas = problemasDoComprovante(leitura, { esperados, chave, usado, agora: /* @__PURE__ */ new Date() });
+  if (!problemas.length) return registrarPago(d2, ctx, donoId, c, "chave", leitura.id_transacao, leitura.valor_centavos);
+  await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro e te respondo, tá?");
+  await ctx.store.avisarDono(
+    c,
+    `Comprovante para conferir: ${brl2(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}. A IA não liberou: ${problemas.join("; ")}. Confira no seu banco e, se caiu, entregue pelo 📦 no Conversas.`
+  );
 }
-async function registrarPago(d2, ctx, donoId, c, asaasId, valor) {
+var limpa = (t) => t.toLowerCase().replace(/[^a-z0-9@.]/g, "");
+function problemasDoComprovante(l, o) {
+  const p = [];
+  if (l.suspeito) p.push(`parece editado ou incompleto${l.motivo ? ` (${l.motivo})` : ""}`);
+  if (!l.valor_centavos || !o.esperados.some((v) => Math.abs(v - l.valor_centavos) <= 1))
+    p.push(`valor ${l.valor_centavos ? brl2(l.valor_centavos) : "não lido"} diferente do cobrado${o.esperados.length === 1 ? ` (${brl2(o.esperados[0])})` : ""}`);
+  if (!l.data_hora) p.push("sem data no comprovante");
+  else {
+    const t = (/* @__PURE__ */ new Date(`${l.data_hora.slice(0, 10)}T${l.data_hora.slice(11, 16) || "12:00"}:00-03:00`)).getTime();
+    const h = (o.agora.getTime() - t) / 36e5;
+    if (!Number.isFinite(h) || h > 72 || h < -3) p.push(`data ${l.data_hora} fora do esperado`);
+  }
+  if (o.chave && l.recebedor_chave && !l.recebedor_chave.includes("*")) {
+    const a = limpa(l.recebedor_chave);
+    const b = limpa(o.chave);
+    const soDig = (t) => t.replace(/\D/g, "");
+    const bate = a === b || soDig(a).length >= 8 && soDig(a) === soDig(b);
+    if (!bate) p.push(`chave de destino (${l.recebedor_chave}) não é a sua`);
+  }
+  if (o.usado) p.push("esse comprovante já foi usado em outra compra");
+  return p;
+}
+async function procurarNoAsaas(d2, gw, leitura) {
+  const recebidos = await pixRecebidosAsaas(gw, diaBR(-1, leitura.data_hora), diaBR(1, leitura.data_hora)).catch(() => []);
+  const candidatos = recebidos.filter((p) => !p.pixQrCodeId && Math.round(Number(p.value) * 100) === leitura.valor_centavos);
+  if (!candidatos.length) return null;
+  const { data: usados } = await d2.db.from("pagamentos").select("gateway_id").eq("gateway", "asaas").in("gateway_id", candidatos.map((p) => p.id));
+  const jaUsados = new Set((usados ?? []).map((u) => u.gateway_id));
+  for (const p of candidatos.filter((x) => !jaUsados.has(x.id))) {
+    const nome = await nomeClienteAsaas(gw, p.customer).catch(() => "");
+    if (nomesBatem(nome, leitura.pagador_nome)) return p;
+  }
+  return null;
+}
+async function registrarPago(d2, ctx, donoId, c, gateway2, gatewayId, valor) {
   const campos = { ...c.campos };
   delete campos[MARCA_CHAVE];
   await d2.db.from("contatos").update({ campos, robo_ativo: true, robo_retomar_em: null }).eq("id", c.id);
@@ -1880,7 +1917,7 @@ async function registrarPago(d2, ctx, donoId, c, asaasId, valor) {
   if (c.pix_ativo) {
     const { data: pg } = await d2.db.from("pagamentos").select("id, valor_centavos").eq("id", c.pix_ativo.pagamento_id).maybeSingle();
     if (pg && Math.abs(pg.valor_centavos - valor) <= 1) {
-      await d2.db.from("pagamentos").update({ gateway: "asaas", gateway_id: asaasId }).eq("id", pg.id);
+      await d2.db.from("pagamentos").update({ gateway: gateway2, gateway_id: gatewayId }).eq("id", pg.id);
       await d2.db.from("pagamentos").update({ status: "pago", pago_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", pg.id).eq("status", "pendente");
       await pixPago(ctx, c, pg.id);
       return;
@@ -1892,7 +1929,7 @@ async function registrarPago(d2, ctx, donoId, c, asaasId, valor) {
   const doPreco = (produtos ?? []).filter((p2) => Math.abs(p2.preco_centavos - valor) <= 1).map((p2) => p2.id);
   const blocoPix = funil?.grafo.nodes.find((n) => n.data.tipo === "pix" && doPreco.includes(String(n.data.config?.produtoId ?? "")));
   const produtoId = blocoPix ? String(blocoPix.data.config?.produtoId) : doPreco[0] ?? null;
-  const { data: novo } = await d2.db.from("pagamentos").insert({ dono_id: donoId, contato_id: c.id, produto_id: produtoId, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway: "asaas", gateway_id: asaasId, simulacao: false }).select("id").single();
+  const { data: novo } = await d2.db.from("pagamentos").insert({ dono_id: donoId, contato_id: c.id, produto_id: produtoId, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway: gateway2, gateway_id: gatewayId, simulacao: false }).select("id").single();
   if (!novo) return;
   await d2.db.from("pagamentos").update({ status: "pago", pago_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", novo.id);
   if (blocoPix && funil) {

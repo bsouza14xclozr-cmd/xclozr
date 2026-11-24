@@ -87,10 +87,6 @@ export async function conferirComprovante(d: Deps, donoId: string, c: M.Contato 
   const ctx = d.ctx(donoId, c);
   const tentativa = Number(dados.tentativa ?? 0);
   const gw = await configGateway(d.db, donoId);
-  if (!gw || gw.gateway !== "asaas") {
-    await ctx.store.avisarDono(c, "Chegou um comprovante, mas a conferência automática só funciona com o Asaas. Confira e entregue pelo 📦 no Conversas.");
-    return;
-  }
 
   // 1. a IA lê o comprovante (uma vez; nas novas tentativas usa a leitura guardada)
   let leitura = dados.leitura as LeituraComprovante | undefined;
@@ -113,41 +109,94 @@ export async function conferirComprovante(d: Deps, donoId: string, c: M.Contato 
   }
   if (!leitura.e_comprovante_pix || !leitura.valor_centavos) return; // foto qualquer: segue a conversa normal
 
-  // 2. procura no Asaas um Pix recebido pela chave (sem QR Code) com o mesmo valor, perto da data e com o mesmo nome
-  const recebidos = await pixRecebidosAsaas(gw, diaBR(-1, leitura.data_hora), diaBR(1, leitura.data_hora));
-  const candidatos = recebidos.filter((p) => !p.pixQrCodeId && Math.round(Number(p.value) * 100) === leitura!.valor_centavos);
-  let achado: (typeof candidatos)[number] | null = null;
-  if (candidatos.length) {
-    const { data: usados } = await d.db.from("pagamentos").select("gateway_id").eq("gateway", "asaas").in("gateway_id", candidatos.map((p) => p.id));
-    const jaUsados = new Set((usados ?? []).map((u: { gateway_id: string }) => u.gateway_id));
-    for (const p of candidatos.filter((x) => !jaUsados.has(x.id))) {
-      const nome = await nomeClienteAsaas(gw, p.customer).catch(() => "");
-      if (nomesBatem(nome, leitura.pagador_nome)) {
-        achado = p;
-        break;
-      }
-    }
-  }
+  // Pix que o robô mandou pela chave (outro banco): quanto devia pagar e para qual chave
+  const { data: pg } = c.pix_ativo
+    ? await d.db.from("pagamentos").select("id, valor_centavos, gateway").eq("id", c.pix_ativo.pagamento_id).maybeSingle()
+    : { data: null };
+  const pelaChave = pg?.gateway === "chave";
 
-  if (!achado) {
-    if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
+  // 2. chave da conta Asaas (mandada à mão): procura o Pix no Asaas pelo valor, dia e nome
+  if (!pelaChave && gw?.gateway === "asaas") {
+    const achado = await procurarNoAsaas(d, gw, leitura);
+    if (achado) return registrarPago(d, ctx, donoId, c, "asaas", achado.id, leitura.valor_centavos);
     if (tentativa + 1 < MAX_TENTATIVAS) {
+      if (tentativa === 0) await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro o pagamento por aqui.");
       await d.agendar(c, new Date(Date.now() + 3 * 60_000), { wa_id: dados.wa_id, tentativa: tentativa + 1, leitura });
       return;
     }
-    await falar(ctx, c, "Ainda não consegui confirmar seu Pix por aqui 🙏 Já avisei a equipe e em instantes te respondem, tá?");
-    await ctx.store.avisarDono(
-      c,
-      `Comprovante não confirmado no Asaas: ${brl(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}${leitura.suspeito ? " (a IA achou o comprovante suspeito)" : ""}. Confira e, se estiver certo, entregue pelo 📦 no Conversas.`,
-    );
-    return;
+    // não caiu no Asaas: a chave era de outro banco → confere só pelo comprovante (abaixo)
   }
 
-  // 3. confirmado: registra o pagamento e segue o funil pela saída "Pagou" (entrega, agradecimento, upsell)
-  await registrarPago(d, ctx, donoId, c, achado.id, leitura.valor_centavos);
+  // 3. chave de outro banco: não dá para ver o extrato, então a IA confere o próprio comprovante
+  let chave = "";
+  if (c.pix_ativo && c.funil_id) {
+    const funil = await ctx.store.funil(c.pix_ativo.funil_id);
+    chave = String(funil?.grafo.nodes.find((n) => n.id === c.pix_ativo!.bloco)?.data.config?.chaveWhatsApp ?? "");
+  }
+  let esperados: number[] = pg ? [pg.valor_centavos] : [];
+  if (!pg) {
+    const { data: produtos } = await d.db.from("produtos").select("preco_centavos").eq("dono_id", donoId).eq("ativo", true);
+    esperados = (produtos ?? []).map((p: { preco_centavos: number }) => p.preco_centavos);
+  }
+  let usado = false;
+  if (leitura.id_transacao) {
+    const { data: u } = await d.db.from("pagamentos").select("id").eq("dono_id", donoId).eq("gateway", "chave").eq("gateway_id", leitura.id_transacao).limit(1);
+    usado = Boolean(u?.length);
+  }
+  const problemas = problemasDoComprovante(leitura, { esperados, chave, usado, agora: new Date() });
+  if (!problemas.length) return registrarPago(d, ctx, donoId, c, "chave", leitura.id_transacao, leitura.valor_centavos);
+
+  await falar(ctx, c, "Recebi seu comprovante! 🙏 Só um instante que já confiro e te respondo, tá?");
+  await ctx.store.avisarDono(
+    c,
+    `Comprovante para conferir: ${brl(leitura.valor_centavos)} de ${leitura.pagador_nome ?? "nome não lido"}${leitura.data_hora ? ` em ${leitura.data_hora}` : ""}. A IA não liberou: ${problemas.join("; ")}. Confira no seu banco e, se caiu, entregue pelo 📦 no Conversas.`,
+  );
 }
 
-async function registrarPago(d: Deps, ctx: M.Ctx, donoId: string, c: M.Contato, asaasId: string, valor: number) {
+/** Só letras e números, minúsculas (para comparar chaves). */
+const limpa = (t: string) => t.toLowerCase().replace(/[^a-z0-9@.]/g, "");
+
+/** O que impede liberar o produto só pelo comprovante (lista vazia = pode liberar). */
+export function problemasDoComprovante(
+  l: LeituraComprovante,
+  o: { esperados: number[]; chave: string; usado: boolean; agora: Date },
+): string[] {
+  const p: string[] = [];
+  if (l.suspeito) p.push(`parece editado ou incompleto${l.motivo ? ` (${l.motivo})` : ""}`);
+  if (!l.valor_centavos || !o.esperados.some((v) => Math.abs(v - l.valor_centavos!) <= 1))
+    p.push(`valor ${l.valor_centavos ? brl(l.valor_centavos) : "não lido"} diferente do cobrado${o.esperados.length === 1 ? ` (${brl(o.esperados[0])})` : ""}`);
+  if (!l.data_hora) p.push("sem data no comprovante");
+  else {
+    const t = new Date(`${l.data_hora.slice(0, 10)}T${(l.data_hora.slice(11, 16) || "12:00")}:00-03:00`).getTime();
+    const h = (o.agora.getTime() - t) / 3_600_000;
+    if (!Number.isFinite(h) || h > 72 || h < -3) p.push(`data ${l.data_hora} fora do esperado`);
+  }
+  // chave de destino: se aparece inteira no comprovante, tem que ser a sua (mascarada com * não dá para conferir)
+  if (o.chave && l.recebedor_chave && !l.recebedor_chave.includes("*")) {
+    const a = limpa(l.recebedor_chave);
+    const b = limpa(o.chave);
+    const soDig = (t: string) => t.replace(/\D/g, "");
+    const bate = a === b || (soDig(a).length >= 8 && soDig(a) === soDig(b));
+    if (!bate) p.push(`chave de destino (${l.recebedor_chave}) não é a sua`);
+  }
+  if (o.usado) p.push("esse comprovante já foi usado em outra compra");
+  return p;
+}
+
+async function procurarNoAsaas(d: Deps, gw: NonNullable<Awaited<ReturnType<typeof configGateway>>>, leitura: LeituraComprovante) {
+  const recebidos = await pixRecebidosAsaas(gw, diaBR(-1, leitura.data_hora), diaBR(1, leitura.data_hora)).catch(() => []);
+  const candidatos = recebidos.filter((p) => !p.pixQrCodeId && Math.round(Number(p.value) * 100) === leitura.valor_centavos);
+  if (!candidatos.length) return null;
+  const { data: usados } = await d.db.from("pagamentos").select("gateway_id").eq("gateway", "asaas").in("gateway_id", candidatos.map((p) => p.id));
+  const jaUsados = new Set((usados ?? []).map((u: { gateway_id: string }) => u.gateway_id));
+  for (const p of candidatos.filter((x) => !jaUsados.has(x.id))) {
+    const nome = await nomeClienteAsaas(gw, p.customer).catch(() => "");
+    if (nomesBatem(nome, leitura.pagador_nome)) return p;
+  }
+  return null;
+}
+
+async function registrarPago(d: Deps, ctx: M.Ctx, donoId: string, c: M.Contato, gateway: string, gatewayId: string | null, valor: number) {
   const campos = { ...c.campos };
   delete campos[MARCA_CHAVE];
   // o robô volta a atender esta conversa (você tinha assumido ao mandar a chave)
@@ -158,7 +207,7 @@ async function registrarPago(d: Deps, ctx: M.Ctx, donoId: string, c: M.Contato, 
   if (c.pix_ativo) {
     const { data: pg } = await d.db.from("pagamentos").select("id, valor_centavos").eq("id", c.pix_ativo.pagamento_id).maybeSingle();
     if (pg && Math.abs(pg.valor_centavos - valor) <= 1) {
-      await d.db.from("pagamentos").update({ gateway: "asaas", gateway_id: asaasId }).eq("id", pg.id);
+      await d.db.from("pagamentos").update({ gateway, gateway_id: gatewayId }).eq("id", pg.id);
       await d.db.from("pagamentos").update({ status: "pago", pago_em: new Date().toISOString() }).eq("id", pg.id).eq("status", "pendente");
       await M.pixPago(ctx, c, pg.id);
       return;
@@ -175,7 +224,7 @@ async function registrarPago(d: Deps, ctx: M.Ctx, donoId: string, c: M.Contato, 
 
   const { data: novo } = await d.db
     .from("pagamentos")
-    .insert({ dono_id: donoId, contato_id: c.id, produto_id: produtoId, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway: "asaas", gateway_id: asaasId, simulacao: false })
+    .insert({ dono_id: donoId, contato_id: c.id, produto_id: produtoId, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway, gateway_id: gatewayId, simulacao: false })
     .select("id")
     .single();
   if (!novo) return;

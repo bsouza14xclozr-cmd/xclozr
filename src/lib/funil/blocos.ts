@@ -411,13 +411,17 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
         dica: "O cliente toca no botão e cola no app do banco. O código em texto vai logo abaixo, caso o botão não apareça no celular dele. A confirmação do pagamento continua automática.",
       },
       {
-        tipo: "booleano",
-        chave: "botaoPixWhatsApp",
-        rotulo: "💠 Enviar o botão de Pix do WhatsApp (chave)",
-        dica: "Manda a solicitação de pagamento nativa do WhatsApp com a sua chave. Quem pagar pela chave manda o comprovante e a IA confere no Asaas antes de entregar. O copia e cola vai junto e continua confirmando sozinho.",
+        tipo: "select",
+        chave: "modoPix",
+        rotulo: "Como o cliente paga",
+        opcoes: [
+          { valor: "asaas", rotulo: "Copia e cola do gateway (confirma sozinho)" },
+          { valor: "chave", rotulo: "💠 Botão de Pix do WhatsApp com a minha chave (a IA confere o comprovante)" },
+        ],
+        dica: "Na chave, não vai copia e cola: o cliente paga pelo botão e manda o comprovante. A IA confere valor, data, chave de destino e se o comprovante não foi usado antes. Se algo não bater, você recebe um aviso para conferir.",
       },
-      { tipo: "texto", chave: "chaveWhatsApp", rotulo: "Chave Pix do botão", placeholder: "Chave da sua conta Asaas", dica: "Use a chave da conta Asaas: é lá que a IA confere se o Pix caiu." },
-      { tipo: "textarea", chave: "msgComprovante", rotulo: "Pedir o comprovante (quando não pagar no tempo acima)", placeholder: "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!", variaveis: true },
+      { tipo: "texto", chave: "chaveWhatsApp", rotulo: "Sua chave Pix (só no modo chave)", placeholder: "e-mail, CPF, CNPJ, celular ou aleatória" },
+      { tipo: "textarea", chave: "msgComprovante", rotulo: "Pedir o comprovante (modo chave, quando não pagar no tempo acima)", placeholder: "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!", variaveis: true },
       { tipo: "numero", chave: "esperarComprovanteMin", rotulo: "Depois de pedir o comprovante, seguir para “Não pagou ainda” em", min: 1, sufixo: "minutos" },
     ],
     padrao: () => ({ produtoId: "", texto: "", esperarMin: 15, expiraMin: 1440 }),
@@ -426,7 +430,7 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
       { id: "nao_pagou", rotulo: "Não pagou ainda", cor: LARANJA },
       { id: "expirou", rotulo: "Pix expirou", cor: VERMELHO },
     ],
-    resumo: (c) => (texto(c, "produtoId") ? "Pix do produto escolhido" : "Escolha o produto"),
+    resumo: (c) => (!texto(c, "produtoId") ? "Escolha o produto" : c?.modoPix === "chave" ? "💠 Pix pela chave · IA confere o comprovante" : "Pix do produto escolhido"),
   },
 
   entregar: {
