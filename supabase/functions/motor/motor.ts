@@ -132,6 +132,21 @@ export function querInformacao(texto: string) {
   return /\?/.test(t) || / (quero|queria|gostaria de|preciso) (saber|entender|ver|conhecer|mais informac|informac|detalhes)/.test(t) || / (como funciona|o que vem|o que e|mais info|me explica|explica melhor) /.test(t);
 }
 
+const ACEITES = ["sim", "quero", "pode", "manda", "mande", "bora", "aceito", "claro", "ok", "combinado", "fechado", "beleza", "blz", "positivo", "vamos", "vamo", "desejo", "gostaria", "fechou", "pode ser", "pode mandar", "quero sim", "manda sim", "pode enviar", "envia", "envie", "uhum", "s"];
+
+/** "simmm" → "sim", "querooo" → "quero" (letras repetidas do jeito que se digita no WhatsApp). */
+export function semRepeticao(t: string) {
+  return normalizar(t).replace(/([a-z])\1{2,}/g, "$1").replace(/([a-z])\1(?=\b)/g, "$1");
+}
+
+/** A mensagem é um "sim, quero" de verdade? (para a IA não fechar venda com pergunta ou comentário) */
+export function aceitou(texto: string, extras: string[] = []) {
+  if (negou(texto) || querInformacao(texto)) return false;
+  const t = semRepeticao(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  if (!t || t.split(" ").length > 12) return false; // texto longo = conversa, não aceite
+  return contemAlguma(t, [...ACEITES, ...extras.map(semRepeticao)]);
+}
+
 /** "amém", "🙏", "glória", "obrigado", "isso", "." … → reação, não pergunta nem compra. */
 export function ehReacao(texto: string) {
   const t = normalizar(texto).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
@@ -722,7 +737,7 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
 
     case "objecoes": {
       const pergunta = querInformacao(texto);
-      if (!negou(texto) && !pergunta && contemAlguma(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
+      if (!negou(texto) && !pergunta && (contemAlguma(texto, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto), palavras(cfg.palavrasCompra)))) return seguir("comprar");
       const obj = ((cfg.objecoes ?? []) as { palavras: string; resposta: string }[]).find((o) => contemAlguma(texto, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
       const reacao = ehReacao(texto);
@@ -737,7 +752,8 @@ export async function receberMensagem(ctx: Ctx, c: Contato, funilPadrao: () => P
         const r = await ctx.ia(c, configIAObjecoes(cfg));
         if (!("erro" in r)) {
           await enviarRespostaIA(ctx, c, r.resposta, false);
-          if (r.concluido) return seguir("comprar");
+          // a IA só fecha a venda se a mensagem do cliente for um aceite claro (pergunta/comentário nunca fecha)
+          if (r.concluido && aceitou(texto, palavras(cfg.palavrasCompra))) return seguir("comprar");
           await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
           return;
         }
@@ -861,7 +877,7 @@ function configIAObjecoes(cfg: Config): Config {
       "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto.",
     ].join("\n"),
     conhecimento: cfg.iaConhecimento || "",
-    objetivo: "o cliente dizer que quer comprar ou pedir o Pix",
+    objetivo: "o cliente dizer claramente que quer (ex.: \"sim\", \"quero\", \"pode mandar\", \"combinado\"). Pergunta, dúvida, comentário ou informação sobre ele NUNCA é aceite: nesses casos responda e pergunte se ele quer, com concluido false",
   };
 }
 

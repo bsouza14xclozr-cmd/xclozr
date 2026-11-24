@@ -21,6 +21,16 @@ function querInformacao(texto2) {
   const t = ` ${normalizar(texto2).replace(/[^\p{L}\p{N}\s?]/gu, " ").replace(/\s+/g, " ")} `;
   return /\?/.test(t) || / (quero|queria|gostaria de|preciso) (saber|entender|ver|conhecer|mais informac|informac|detalhes)/.test(t) || / (como funciona|o que vem|o que e|mais info|me explica|explica melhor) /.test(t);
 }
+var ACEITES = ["sim", "quero", "pode", "manda", "mande", "bora", "aceito", "claro", "ok", "combinado", "fechado", "beleza", "blz", "positivo", "vamos", "vamo", "desejo", "gostaria", "fechou", "pode ser", "pode mandar", "quero sim", "manda sim", "pode enviar", "envia", "envie", "uhum", "s"];
+function semRepeticao(t) {
+  return normalizar(t).replace(/([a-z])\1{2,}/g, "$1").replace(/([a-z])\1(?=\b)/g, "$1");
+}
+function aceitou(texto2, extras = []) {
+  if (negou(texto2) || querInformacao(texto2)) return false;
+  const t = semRepeticao(texto2).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  if (!t || t.split(" ").length > 12) return false;
+  return contemAlguma(t, [...ACEITES, ...extras.map(semRepeticao)]);
+}
 function ehReacao(texto2) {
   const t = normalizar(texto2).replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   if (!t) return true;
@@ -518,7 +528,7 @@ ${lista}`);
     }
     case "objecoes": {
       const pergunta = querInformacao(texto2);
-      if (!negou(texto2) && !pergunta && contemAlguma(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
+      if (!negou(texto2) && !pergunta && (contemAlguma(texto2, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto2), palavras(cfg.palavrasCompra)))) return seguir("comprar");
       const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto2, palavras(o.palavras)));
       if (obj?.resposta) return repetir(obj.resposta);
       const reacao = ehReacao(texto2);
@@ -531,7 +541,7 @@ ${lista}`);
         const r = await ctx.ia(c, configIAObjecoes(cfg));
         if (!("erro" in r)) {
           await enviarRespostaIA(ctx, c, r.resposta, false);
-          if (r.concluido) return seguir("comprar");
+          if (r.concluido && aceitou(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
           await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
           return;
         }
@@ -541,9 +551,9 @@ ${lista}`);
       return;
     }
     case "upsell": {
-      const aceitou = !negou(texto2) && contemAlguma(texto2, palavras(cfg.palavrasSim));
-      if (n.data.tipo === "orderbump" && aceitou && cfg.produtoId) await patch(ctx, c, { campos: { ...c.campos, __bump: String(cfg.produtoId) } });
-      return seguir(aceitou ? "aceitou" : "recusou");
+      const aceitou2 = !negou(texto2) && contemAlguma(texto2, palavras(cfg.palavrasSim));
+      if (n.data.tipo === "orderbump" && aceitou2 && cfg.produtoId) await patch(ctx, c, { campos: { ...c.campos, __bump: String(cfg.produtoId) } });
+      return seguir(aceitou2 ? "aceitou" : "recusou");
     }
     case "esperar":
       if (ag.cancelaSeResponder) return seguir("seguir");
@@ -632,7 +642,7 @@ function configIAObjecoes(cfg) {
       "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto."
     ].join("\n"),
     conhecimento: cfg.iaConhecimento || "",
-    objetivo: "o cliente dizer que quer comprar ou pedir o Pix"
+    objetivo: 'o cliente dizer claramente que quer (ex.: "sim", "quero", "pode mandar", "combinado"). Pergunta, dúvida, comentário ou informação sobre ele NUNCA é aceite: nesses casos responda e pergunte se ele quer, com concluido false'
   };
 }
 async function duvidaComPixAberto(ctx, c, funil, texto2) {
@@ -1566,7 +1576,7 @@ OBJETIVO: ${b.objetivo}` : "\nOBJETIVO: tirar as dúvidas e levar o cliente a de
     "- Não envie links nem chaves Pix: o Pix é gerado pelo sistema depois que o objetivo for concluído.",
     "- Se pedirem para falar com humano, responda com educação e marque concluido como false.",
     '\nResponda SOMENTE com um JSON: {"resposta": "texto para o cliente", "concluido": true ou false}.',
-    "concluido = true apenas quando o OBJETIVO foi atingido (ex.: o cliente disse claramente que quer comprar)."
+    "concluido = true apenas quando o OBJETIVO foi atingido NA ÚLTIMA MENSAGEM do cliente (ex.: ele disse claramente que quer). Se a sua resposta termina com uma pergunta para o cliente, concluido é false."
   ].filter(Boolean).join("\n");
   const variavel = `CLIENTE DESTA CONVERSA: ${nome ? `primeiro nome ${nome}` : "nome desconhecido (não invente um nome)"}${campos ? `; ${campos}` : ""}.`;
   return { fixo, variavel };

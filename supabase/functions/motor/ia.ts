@@ -142,7 +142,7 @@ function montarSistema(c: Contato, b: Config): Sistema {
     "- Não envie links nem chaves Pix: o Pix é gerado pelo sistema depois que o objetivo for concluído.",
     "- Se pedirem para falar com humano, responda com educação e marque concluido como false.",
     '\nResponda SOMENTE com um JSON: {"resposta": "texto para o cliente", "concluido": true ou false}.',
-    "concluido = true apenas quando o OBJETIVO foi atingido (ex.: o cliente disse claramente que quer comprar).",
+    "concluido = true apenas quando o OBJETIVO foi atingido NA ÚLTIMA MENSAGEM do cliente (ex.: ele disse claramente que quer). Se a sua resposta termina com uma pergunta para o cliente, concluido é false.",
   ]
     .filter(Boolean)
     .join("\n");
