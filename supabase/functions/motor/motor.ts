@@ -530,7 +530,11 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         return { parar: true, finalizar: true };
       }
       await enviarTexto(ctx, c, preencher(cfg.texto || "Aqui está o seu Pix de {preco} 👇", c, { produto: cobrado.nome, preco: brl(cobrado.preco_centavos) }));
-      if (modoChave) {
+      if (modoChave && cfg.botaoPix === false) {
+        // só a chave escrita, numa mensagem sozinha (fácil de copiar). O botão do WhatsApp só aparece para quem tem o número salvo.
+        await enviar(ctx, c, { tipo: "texto", texto: chaveWpp, esperaMs: 1200 });
+        await patch(ctx, c, { campos: { ...c.campos, __chave_pix: ctx.store.agora().toISOString(), __pediu_comprovante: "" } });
+      } else if (modoChave) {
         try {
           await enviar(ctx, c, {
             tipo: "botao_pix",

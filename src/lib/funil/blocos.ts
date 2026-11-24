@@ -421,6 +421,12 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
         dica: "Na chave, não vai copia e cola: o cliente paga pelo botão e manda o comprovante. A IA confere valor, data, chave de destino e se o comprovante não foi usado antes. Se algo não bater, você recebe um aviso para conferir.",
       },
       { tipo: "texto", chave: "chaveWhatsApp", rotulo: "Sua chave Pix (só no modo chave)", placeholder: "e-mail, CPF, CNPJ, celular ou aleatória" },
+      {
+        tipo: "booleano",
+        chave: "botaoPix",
+        rotulo: "💠 Mandar também o botão de Pix do WhatsApp",
+        dica: "Desmarcado: vai só a chave escrita (numa mensagem sozinha, fácil de copiar). O botão só aparece para quem tem o seu número salvo.",
+      },
       { tipo: "textarea", chave: "msgComprovante", rotulo: "Pedir o comprovante (modo chave, quando não pagar no tempo acima)", placeholder: "Conseguiu fazer o Pix? 🙏 Se já pagou, me manda o print do comprovante aqui que eu já te libero o material!", variaveis: true },
       { tipo: "numero", chave: "esperarComprovanteMin", rotulo: "Depois de pedir o comprovante, seguir para “Não pagou ainda” em", min: 1, sufixo: "minutos" },
     ],
