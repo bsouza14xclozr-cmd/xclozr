@@ -185,10 +185,14 @@ async function executarBloco(ctx, c, funil, n, ultimaMensagem) {
         if (item.tipo === "texto") {
           const t = preencher(item.texto ?? "", c).trim();
           if (t) await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs: espera });
-        } else if ((item.tipo === "imagem" || item.tipo === "video") && item.url) {
-          await enviar(ctx, c, { tipo: item.tipo, url: item.url, legenda: preencher(item.legenda ?? "", c), esperaMs: espera });
-        } else if (item.tipo === "audio" && item.url) {
-          await enviar(ctx, c, { tipo: "audio", url: item.url, esperaMs: espera });
+        } else if ((item.tipo === "imagem" || item.tipo === "video" || item.tipo === "audio") && item.url) {
+          const s = item.tipo === "audio" ? { tipo: "audio", url: item.url, esperaMs: espera } : { tipo: item.tipo, url: item.url, legenda: preencher(item.legenda ?? "", c), esperaMs: espera };
+          try {
+            await enviar(ctx, c, s);
+          } catch (e) {
+            ctx.log?.(`mídia do bloco ${n.id} falhou: ${e.message}`);
+            await ctx.store.avisarDono(c, `Uma ${item.tipo === "imagem" ? "imagem" : item.tipo === "video" ? "vídeo" : "mídia de áudio"} do bloco “${n.id}” não foi enviada para {nome} (${e.message.slice(0, 120)}). O funil seguiu sem ela.`.replace("{nome}", c.nome ?? "o cliente"));
+          }
         } else if (item.tipo === "voz") {
           const t = preencher(item.texto ?? "", c).trim();
           if (t) {
@@ -1319,7 +1323,7 @@ function criarEnvioEvolution(db2, cfg) {
         rota = `/message/sendMedia/${inst}`;
         corpo = {
           number: c.telefone,
-          mediatype: s.tipo === "arquivo" ? "document" : s.tipo,
+          mediatype: s.tipo === "arquivo" ? "document" : s.tipo === "imagem" ? "image" : s.tipo,
           media: s.url,
           caption: "legenda" in s ? s.legenda : void 0,
           fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : void 0,

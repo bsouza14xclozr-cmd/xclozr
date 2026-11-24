@@ -352,10 +352,15 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         if (item.tipo === "texto") {
           const t = preencher(item.texto ?? "", c).trim();
           if (t) await enviar(ctx, c, { tipo: "texto", texto: t, esperaMs: espera });
-        } else if ((item.tipo === "imagem" || item.tipo === "video") && item.url) {
-          await enviar(ctx, c, { tipo: item.tipo, url: item.url, legenda: preencher(item.legenda ?? "", c), esperaMs: espera });
-        } else if (item.tipo === "audio" && item.url) {
-          await enviar(ctx, c, { tipo: "audio", url: item.url, esperaMs: espera });
+        } else if ((item.tipo === "imagem" || item.tipo === "video" || item.tipo === "audio") && item.url) {
+          // mídia que falhar (link quebrado, formato) não trava o funil: avisa você e segue para o próximo item
+          const s: Saida = item.tipo === "audio" ? { tipo: "audio", url: item.url, esperaMs: espera } : { tipo: item.tipo, url: item.url, legenda: preencher(item.legenda ?? "", c), esperaMs: espera };
+          try {
+            await enviar(ctx, c, s);
+          } catch (e) {
+            ctx.log?.(`mídia do bloco ${n.id} falhou: ${(e as Error).message}`);
+            await ctx.store.avisarDono(c, `Uma ${item.tipo === "imagem" ? "imagem" : item.tipo === "video" ? "vídeo" : "mídia de áudio"} do bloco “${n.id}” não foi enviada para {nome} (${(e as Error).message.slice(0, 120)}). O funil seguiu sem ela.`.replace("{nome}", c.nome ?? "o cliente"));
+          }
         } else if (item.tipo === "voz") {
           // áudio com a voz clonada do dono; se falhar, manda o mesmo texto escrito (a conversa não trava)
           const t = preencher(item.texto ?? "", c).trim();

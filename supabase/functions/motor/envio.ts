@@ -156,7 +156,7 @@ export function criarEnvioEvolution(db: SupabaseClient, cfg: Record<string, stri
         rota = `/message/sendMedia/${inst}`;
         corpo = {
           number: c.telefone,
-          mediatype: s.tipo === "arquivo" ? "document" : s.tipo,
+          mediatype: s.tipo === "arquivo" ? "document" : s.tipo === "imagem" ? "image" : s.tipo,
           media: s.url,
           caption: "legenda" in s ? s.legenda : undefined,
           fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : undefined,
