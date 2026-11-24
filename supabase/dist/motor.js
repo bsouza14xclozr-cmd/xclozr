@@ -1702,17 +1702,28 @@ async function lerComprovante(db2, donoId, contatoId, base64, mime) {
     let entrada = 0;
     let saida = 0;
     if (cfg.provedor === "gemini") {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`, {
-        method: "POST",
-        signal: sinal,
-        headers: { "content-type": "application/json", "x-goog-api-key": cfg.chave },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: PEDIDO_COMPROVANTE }] }],
-          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 800 }
-        })
-      });
-      const j2 = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j2?.error?.message ?? `Gemini ${r.status}`);
+      const modelos = [.../* @__PURE__ */ new Set([cfg.modelo, "gemini-flash-latest", "gemini-2.5-flash"])];
+      let j2 = {};
+      let ultimoErro = "";
+      for (const modelo of modelos) {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`, {
+          method: "POST",
+          signal: sinal,
+          headers: { "content-type": "application/json", "x-goog-api-key": cfg.chave },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: PEDIDO_COMPROVANTE }] }],
+            generationConfig: { responseMimeType: "application/json", maxOutputTokens: 800 }
+          })
+        });
+        j2 = await r.json().catch(() => ({}));
+        if (r.ok) {
+          ultimoErro = "";
+          break;
+        }
+        ultimoErro = j2?.error?.message ?? `Gemini ${r.status}`;
+        if (!(r.status === 503 || r.status === 429 || r.status === 500 || /demand|overload|unavailable/i.test(ultimoErro))) break;
+      }
+      if (ultimoErro) throw new Error(ultimoErro);
       texto2 = (j2.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
       entrada = j2.usageMetadata?.promptTokenCount ?? 0;
       saida = j2.usageMetadata?.candidatesTokenCount ?? 0;

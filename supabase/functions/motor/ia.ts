@@ -222,17 +222,29 @@ export async function lerComprovante(db: SupabaseClient, donoId: string, contato
     let entrada = 0;
     let saida = 0;
     if (cfg.provedor === "gemini") {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.modelo)}:generateContent`, {
-        method: "POST",
-        signal: sinal,
-        headers: { "content-type": "application/json", "x-goog-api-key": cfg.chave },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: PEDIDO_COMPROVANTE }] }],
-          generationConfig: { responseMimeType: "application/json", maxOutputTokens: 800 },
-        }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error?.message ?? `Gemini ${r.status}`);
+      // modelo sobrecarregado ("high demand"/503): tenta outros modelos Gemini antes de desistir
+      const modelos = [...new Set([cfg.modelo, "gemini-flash-latest", "gemini-2.5-flash"])];
+      let j: any = {};
+      let ultimoErro = "";
+      for (const modelo of modelos) {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`, {
+          method: "POST",
+          signal: sinal,
+          headers: { "content-type": "application/json", "x-goog-api-key": cfg.chave },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: PEDIDO_COMPROVANTE }] }],
+            generationConfig: { responseMimeType: "application/json", maxOutputTokens: 800 },
+          }),
+        });
+        j = await r.json().catch(() => ({}));
+        if (r.ok) {
+          ultimoErro = "";
+          break;
+        }
+        ultimoErro = j?.error?.message ?? `Gemini ${r.status}`;
+        if (!(r.status === 503 || r.status === 429 || r.status === 500 || /demand|overload|unavailable/i.test(ultimoErro))) break;
+      }
+      if (ultimoErro) throw new Error(ultimoErro);
       texto = (j.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
       entrada = j.usageMetadata?.promptTokenCount ?? 0;
       saida = j.usageMetadata?.candidatesTokenCount ?? 0;
