@@ -13,6 +13,7 @@ type Contato = {
   nome: string | null;
   telefone: string;
   robo_ativo: boolean;
+  robo_retomar_em?: string | null;
   ultima_msg_em: string | null;
   etiquetas: string[];
   kanban_coluna_id: string | null;
@@ -103,7 +104,7 @@ export function ConversasCliente() {
     const [c, m, k] = await Promise.all([
       supabase
         .from("contatos")
-        .select("id, nome, telefone, robo_ativo, ultima_msg_em, etiquetas, kanban_coluna_id")
+        .select("id, nome, telefone, robo_ativo, robo_retomar_em, ultima_msg_em, etiquetas, kanban_coluna_id")
         .eq("simulacao", false)
         .order("ultima_msg_em", { ascending: false, nullsFirst: false })
         .limit(300),
@@ -155,7 +156,7 @@ export function ConversasCliente() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contatos" }, (payload) => {
         const n = payload.new as Contato & { simulacao?: boolean };
         if (n.simulacao) return;
-        setContatos((cs) => cs?.map((c) => (c.id === n.id ? { ...c, robo_ativo: n.robo_ativo, nome: n.nome, etiquetas: n.etiquetas, kanban_coluna_id: n.kanban_coluna_id } : c)) ?? cs);
+        setContatos((cs) => cs?.map((c) => (c.id === n.id ? { ...c, robo_ativo: n.robo_ativo, robo_retomar_em: n.robo_retomar_em, nome: n.nome, etiquetas: n.etiquetas, kanban_coluna_id: n.kanban_coluna_id } : c)) ?? cs);
       })
       .subscribe();
     return () => {
@@ -240,7 +241,8 @@ export function ConversasCliente() {
     if (!atual) return;
     const novo = !atual.robo_ativo;
     setContatos((cs) => cs?.map((c) => (c.id === atual.id ? { ...c, robo_ativo: novo } : c)) ?? cs);
-    const { error } = await createClient().from("contatos").update({ robo_ativo: novo }).eq("id", atual.id);
+    setContatos((cs) => cs?.map((c) => (c.id === atual.id ? { ...c, robo_retomar_em: null } : c)) ?? cs);
+    const { error } = await createClient().from("contatos").update({ robo_ativo: novo, robo_retomar_em: null }).eq("id", atual.id);
     if (error) {
       setErro("Não consegui alterar o robô dessa conversa.");
       void carregarLista();
@@ -332,7 +334,13 @@ export function ConversasCliente() {
                     ) : (
                       <span className="h-2 w-2 rounded-full bg-laranja" />
                     )}
-                    {atual.robo_ativo ? (roboTrabalhando ? "Robô atendendo agora" : "Robô atendendo") : "Robô pausado"}
+                    {atual.robo_ativo
+                      ? roboTrabalhando
+                        ? "Robô atendendo agora"
+                        : "Robô atendendo"
+                      : atual.robo_retomar_em
+                        ? `Robô pausado · volta às ${new Date(atual.robo_retomar_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                        : "Robô pausado"}
                   </button>
                   <button
                     type="button"

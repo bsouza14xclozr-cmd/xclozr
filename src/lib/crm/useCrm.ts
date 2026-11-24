@@ -108,7 +108,9 @@ export function useCrm() {
   /* ---------- contatos ---------- */
   const atualizarContato = useCallback(async (id: string, patch: PatchContato) => {
     setContatos((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    const { error } = await createClient().from("contatos").update(patch).eq("id", id);
+    // ligar/desligar o robô à mão cancela a volta automática (de quando você respondeu pelo celular)
+    const dados = "robo_ativo" in patch ? { ...patch, robo_retomar_em: null } : patch;
+    const { error } = await createClient().from("contatos").update(dados).eq("id", id);
     if (error) setErro("Não consegui salvar a alteração do contato.");
   }, []);
 

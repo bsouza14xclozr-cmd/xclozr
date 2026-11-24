@@ -407,7 +407,7 @@ async function enviarManual(req: Request) {
   }
 
   const patch: Record<string, unknown> = { ultima_msg_em: new Date().toISOString() };
-  if (corpo.pausar_robo !== false) patch.robo_ativo = false;
+  if (corpo.pausar_robo !== false) Object.assign(patch, { robo_ativo: false, robo_retomar_em: null });
 
   // entrega manual: pode registrar como venda paga (entra no faturamento, relatórios e notificação)
   if (produtoEntregue && corpo.registrar_venda) {
@@ -620,7 +620,13 @@ async function evolution(req: Request, cfg: Record<string, string>) {
       const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto.trim());
       if (!foiRobo) {
         await db.from("mensagens").insert({ dono_id: donoId, contato_id: linha.id, autor: "humano", tipo: "texto", conteudo: texto, wa_id: d.key?.id });
-        await db.from("contatos").update({ robo_ativo: false }).eq("id", linha.id);
+        // você assumiu pelo celular: o robô pausa e volta sozinho 30 min depois da sua última mensagem
+        // (se você já tinha pausado de vez pelo painel, continua pausado)
+        await db
+          .from("contatos")
+          .update({ robo_ativo: false, robo_retomar_em: new Date(Date.now() + RETOMAR_MS).toISOString() })
+          .eq("id", linha.id)
+          .or("robo_ativo.eq.true,robo_retomar_em.not.is.null");
       }
     }
     return json({ ok: true });
@@ -702,8 +708,40 @@ function emSegundoPlano(p: Promise<unknown>) {
 /* ------------------------------------------------------------------ */
 /* Relógio (pg_cron)                                                   */
 /* ------------------------------------------------------------------ */
+const RETOMAR_MS = 30 * 60_000;
+
+/** Robôs pausados porque você respondeu pelo celular: voltam e continuam o funil de onde pararam. */
+async function retomarRobos(cfg: Record<string, string>) {
+  const { data: lista } = await db
+    .from("contatos")
+    .select("id, dono_id")
+    .eq("robo_ativo", false)
+    .not("robo_retomar_em", "is", null)
+    .lte("robo_retomar_em", new Date().toISOString())
+    .limit(20);
+  for (const r of lista ?? []) {
+    const { data: ok } = await db.from("contatos").update({ robo_ativo: true, robo_retomar_em: null }).eq("id", r.id).eq("robo_ativo", false).not("robo_retomar_em", "is", null).select("id");
+    if (!ok?.length) continue;
+    const contato = await carregarContato(r.id);
+    const ag = contato?.aguardando;
+    // uma espera do funil venceu enquanto o robô estava pausado (ex.: "1 min e oferece o upsell"): segue agora
+    if (!contato || !ag || ag.tipo !== "esperar") continue;
+    const { count } = await db.from("agendamentos").select("id", { count: "exact", head: true }).eq("contato_id", r.id).eq("feito", false);
+    if (count) continue; // a espera ainda não venceu: o relógio segue normal
+    if (!(await travar(r.id))) continue;
+    try {
+      await M.executarAgendamento(ctxPara(r.dono_id, contato.simulacao, cfg), contato, "esperar", { bloco: ag.bloco, token: ag.token });
+    } catch (e) {
+      console.error("erro ao retomar funil", r.id, e);
+    } finally {
+      await soltar(r.id);
+    }
+  }
+}
+
 async function relogio(req: Request, cfg: Record<string, string>) {
   if (!cfg.segredo_relogio || req.headers.get("x-segredo") !== cfg.segredo_relogio) return json({ erro: "segredo inválido" }, 401);
+  await retomarRobos(cfg).catch((e) => console.error("erro ao retomar robôs", e));
   const { data: vencidos } = await db
     .from("agendamentos")
     .select("id, dono_id, contato_id, tipo, dados")

@@ -2103,7 +2103,7 @@ async function enviarManual(req) {
     });
   }
   const patch2 = { ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString() };
-  if (corpo.pausar_robo !== false) patch2.robo_ativo = false;
+  if (corpo.pausar_robo !== false) Object.assign(patch2, { robo_ativo: false, robo_retomar_em: null });
   if (produtoEntregue && corpo.registrar_venda) {
     const valor = Math.max(0, Math.round(Number(corpo.valor_centavos ?? produtoEntregue.preco_centavos)));
     const { data: pg } = await db.from("pagamentos").insert({ dono_id: donoId, contato_id: contato.id, produto_id: produtoEntregue.id, tipo: "principal", valor_centavos: valor, taxa_centavos: 0, status: "pendente", gateway: "manual", simulacao: false }).select("id").single();
@@ -2249,7 +2249,7 @@ async function evolution(req, cfg) {
       const foiRobo = (ult ?? []).some((m) => (m.conteudo ?? "").trim() === texto2.trim());
       if (!foiRobo) {
         await db.from("mensagens").insert({ dono_id: donoId, contato_id: linha.id, autor: "humano", tipo: "texto", conteudo: texto2, wa_id: d2.key?.id });
-        await db.from("contatos").update({ robo_ativo: false }).eq("id", linha.id);
+        await db.from("contatos").update({ robo_ativo: false, robo_retomar_em: new Date(Date.now() + RETOMAR_MS).toISOString() }).eq("id", linha.id).or("robo_ativo.eq.true,robo_retomar_em.not.is.null");
       }
     }
     return json({ ok: true });
@@ -2309,8 +2309,30 @@ function emSegundoPlano(p) {
   }
   return false;
 }
+var RETOMAR_MS = 30 * 6e4;
+async function retomarRobos(cfg) {
+  const { data: lista } = await db.from("contatos").select("id, dono_id").eq("robo_ativo", false).not("robo_retomar_em", "is", null).lte("robo_retomar_em", (/* @__PURE__ */ new Date()).toISOString()).limit(20);
+  for (const r of lista ?? []) {
+    const { data: ok } = await db.from("contatos").update({ robo_ativo: true, robo_retomar_em: null }).eq("id", r.id).eq("robo_ativo", false).not("robo_retomar_em", "is", null).select("id");
+    if (!ok?.length) continue;
+    const contato = await carregarContato(r.id);
+    const ag = contato?.aguardando;
+    if (!contato || !ag || ag.tipo !== "esperar") continue;
+    const { count } = await db.from("agendamentos").select("id", { count: "exact", head: true }).eq("contato_id", r.id).eq("feito", false);
+    if (count) continue;
+    if (!await travar(r.id)) continue;
+    try {
+      await executarAgendamento(ctxPara(r.dono_id, contato.simulacao, cfg), contato, "esperar", { bloco: ag.bloco, token: ag.token });
+    } catch (e) {
+      console.error("erro ao retomar funil", r.id, e);
+    } finally {
+      await soltar(r.id);
+    }
+  }
+}
 async function relogio(req, cfg) {
   if (!cfg.segredo_relogio || req.headers.get("x-segredo") !== cfg.segredo_relogio) return json({ erro: "segredo inválido" }, 401);
+  await retomarRobos(cfg).catch((e) => console.error("erro ao retomar robôs", e));
   const { data: vencidos } = await db.from("agendamentos").select("id, dono_id, contato_id, tipo, dados").eq("feito", false).lte("executar_em", (/* @__PURE__ */ new Date()).toISOString()).order("executar_em").limit(40);
   let feitos = 0;
   await Promise.all((vencidos ?? []).map(async (a) => {

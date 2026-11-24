@@ -31,7 +31,7 @@ export async function reiniciarFluxo(contatoId: string, funilId: string | null, 
   // robô ainda sem a rota nova: zera pelo próprio painel (começa na próxima mensagem do cliente)
   const { error: e2 } = await supabase
     .from("contatos")
-    .update({ funil_id: funilId, bloco_atual: null, aguardando: null, finalizado: false, pix_ativo: null, robo_ativo: true })
+    .update({ funil_id: funilId, bloco_atual: null, aguardando: null, finalizado: false, pix_ativo: null, robo_ativo: true, robo_retomar_em: null })
     .eq("id", contatoId);
   if (e2) throw new Error("Não consegui reiniciar o fluxo.");
   return "Fluxo reiniciado! Ele começa do zero quando o cliente mandar a próxima mensagem.";
