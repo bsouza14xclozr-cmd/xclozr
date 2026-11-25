@@ -587,7 +587,7 @@ ${lista}`);
       const primeiraDoAtendente = Boolean(ag.atendente) && ag.tentativas === 0 && Boolean(ctx.ia);
       if (!primeiraDoAtendente && !negou(texto2) && !pergunta && (contemAlguma(texto2, palavras(cfg.palavrasCompra)) || contemAlguma(semRepeticao(texto2), palavras(cfg.palavrasCompra)))) return seguir("comprar");
       const obj = (cfg.objecoes ?? []).find((o) => contemAlguma(texto2, palavras(o.palavras)));
-      if (obj?.resposta && !primeiraDoAtendente) return repetir(obj.resposta);
+      if (obj?.resposta && !ag.atendente) return repetir(obj.resposta);
       const reacao = !(ag.atendente && ctx.ia) && ehReacao(texto2);
       if (op.atrasada && (reacao || normalizar(texto2).length < 15)) return;
       if (reacao) {
@@ -597,7 +597,7 @@ ${lista}`);
       if ((cfg.iaLigada || ag.atendente) && ctx.ia) {
         const r = await ctx.ia(c, configIAObjecoes(cfg, Boolean(ag.atendente)));
         if (!("erro" in r)) {
-          await enviarRespostaIA(ctx, c, r.resposta, false);
+          await enviarRespostaIA(ctx, c, r.resposta, Boolean(ag.atendente));
           if (r.concluido && !primeiraDoAtendente && aceitou(texto2, palavras(cfg.palavrasCompra))) return seguir("comprar");
           await patch(ctx, c, { aguardando: { ...ag, tentativas: ag.tentativas + 1 } });
           return;
@@ -701,10 +701,29 @@ function opcaoPorPalavra(texto2, opcoes) {
   return achadas.length && (achadas.length === 1 || achadas[0].hits > achadas[1].hits) ? achadas[0].i : -1;
 }
 function configIAObjecoes(cfg, atendente = false) {
+  const base2 = cfg.iaInstrucoes || "Você é a pessoa que vende este produto no WhatsApp: simpática, acolhedora e direta.";
+  if (atendente) {
+    return {
+      estilo: "whatsapp",
+      instrucoes: [
+        base2,
+        'Você atende este cliente desde a primeira mensagem (ele veio do anúncio). A primeira mensagem dele costuma ser automática do anúncio (ex.: "Quero o caderno fácil", "Olá"): NÃO trate como compra.',
+        "Conduza a conversa como o nosso funil faz, em etapas, sem pressa:",
+        '1) Na primeira resposta: cumprimente com carinho (ex.: "Graça e paz! 🙏 Que bom que você chamou!") e pergunte onde a pessoa quer aplicar a prova (igreja, célula/grupo, família ou ministério infantil). Ainda não fale de preço nem de Pix.',
+        "2) Quando ela responder: conecte com o uso dela (ex.: na igreja = culto de família, EBD, premiação dos campeões) e apresente o kit numa lista com ✅ (o que vem nele, de acordo com as INFORMAÇÕES DO PRODUTO), dizendo que dá para imprimir quantas cópias quiser.",
+        "3) Depois apresente a oferta: o *nome do produto* por *R$ preço*, que chega no WhatsApp na hora depois do Pix, e só então pergunte se pode gerar o Pix.",
+        "Se o cliente pular etapas (perguntar o preço, pedir o Pix, fazer uma pergunta), responda o que ele perguntou primeiro e siga a partir dali.",
+        'Ofereça o Pix no máximo uma vez a cada 2 respostas suas; nas outras termine com uma pergunta sobre a pessoa ou o uso dela. Nunca termine duas mensagens seguidas com "Posso gerar seu Pix?".',
+        "Objeção de preço ou falta de dinheiro: acolha sem pressionar, mostre o valor (rende para a igreja toda, menos de R$1 por pessoa) e diga que pode chamar quando der; não peça o Pix nessa mesma mensagem."
+      ].join("\n"),
+      conhecimento: cfg.iaConhecimento || "",
+      objetivo: 'o cliente dizer claramente que quer comprar (ex.: "sim", "quero", "pode mandar", "combinado") depois de conhecer o produto. Pergunta, dúvida, comentário ou informação sobre ele NUNCA é aceite: nesses casos responda e continue a conversa, com concluido false'
+    };
+  }
   return {
     instrucoes: [
-      cfg.iaInstrucoes || "Você é a pessoa que vende este produto no WhatsApp: simpática, acolhedora e direta.",
-      atendente ? 'Você atende este cliente desde a primeira mensagem (ele veio do anúncio). A primeira mensagem dele costuma ser automática do anúncio (ex.: "Quero o caderno fácil"), então NÃO trate como compra: na primeira resposta, cumprimente, explique o produto em poucas linhas (o que é, o que vem e o preço) e pergunte se ele quer que você já mande o Pix. Depois, responda exatamente o que ele disser, com naturalidade. Mensagens curtas, como no WhatsApp.' : "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
+      base2,
+      "Você está no meio da venda: o cliente já viu o produto e o preço. Responda exatamente o que ele disse, com naturalidade.",
       "Se fizer sentido, termine com uma pergunta curta convidando a gerar o Pix (sem repetir a mesma frase de antes).",
       "Se o cliente só comentou algo (um plano, uma ideia), valide e conecte com o produto."
     ].join("\n"),
@@ -1651,7 +1670,7 @@ ${b.conhecimento}` : "",
     b.objetivo ? `
 OBJETIVO: ${b.objetivo}` : "\nOBJETIVO: tirar as dúvidas e levar o cliente a decidir comprar.",
     "\nREGRAS:",
-    "- Mensagens curtas e naturais, como no WhatsApp (1 a 3 frases). Sem títulos, sem markdown, no máximo 1 emoji.",
+    b.estilo === "whatsapp" ? "- Escreva como um bom vendedor no WhatsApp: calor humano, emojis com moderação (2 a 4 por mensagem), *negrito* do WhatsApp nas palavras-chave e listas com ✅ quando listar o que vem no kit. Separe a resposta em 1 a 3 balões com uma linha em branco entre eles; cada balão curto (até ~5 linhas)." : "- Mensagens curtas e naturais, como no WhatsApp (1 a 3 frases). Sem títulos, sem markdown, no máximo 1 emoji.",
     "- Faça uma pergunta por vez. Não repita o que já foi dito.",
     "- Não envie links nem chaves Pix: o Pix é gerado pelo sistema depois que o objetivo for concluído.",
     "- Se pedirem para falar com humano, responda com educação e marque concluido como false.",

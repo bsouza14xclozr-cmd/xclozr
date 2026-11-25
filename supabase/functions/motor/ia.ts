@@ -137,7 +137,9 @@ function montarSistema(c: Contato, b: Config): Sistema {
     b.conhecimento ? `\nINFORMAÇÕES DO PRODUTO (use só isto; nunca invente preço, prazo ou garantia):\n${b.conhecimento}` : "",
     b.objetivo ? `\nOBJETIVO: ${b.objetivo}` : "\nOBJETIVO: tirar as dúvidas e levar o cliente a decidir comprar.",
     "\nREGRAS:",
-    "- Mensagens curtas e naturais, como no WhatsApp (1 a 3 frases). Sem títulos, sem markdown, no máximo 1 emoji.",
+    b.estilo === "whatsapp"
+      ? "- Escreva como um bom vendedor no WhatsApp: calor humano, emojis com moderação (2 a 4 por mensagem), *negrito* do WhatsApp nas palavras-chave e listas com ✅ quando listar o que vem no kit. Separe a resposta em 1 a 3 balões com uma linha em branco entre eles; cada balão curto (até ~5 linhas)."
+      : "- Mensagens curtas e naturais, como no WhatsApp (1 a 3 frases). Sem títulos, sem markdown, no máximo 1 emoji.",
     "- Faça uma pergunta por vez. Não repita o que já foi dito.",
     "- Não envie links nem chaves Pix: o Pix é gerado pelo sistema depois que o objetivo for concluído.",
     "- Se pedirem para falar com humano, responda com educação e marque concluido como false.",
