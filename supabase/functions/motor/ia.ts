@@ -3,7 +3,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { primeiroNome, type Config, type Contato } from "./motor.ts";
 
 export type Provedor = "openai" | "anthropic" | "gemini";
-export type ConfigIA = { provedor: Provedor; modelo: string; chave: string };
+export type ConfigIA = { provedor: Provedor; modelo: string; chave: string; endereco?: string | null };
 type Msg = { papel: "cliente" | "vendedor"; texto: string };
 export type RespostaIA = { resposta: string; concluido: boolean } | { erro: string };
 
@@ -39,7 +39,7 @@ async function chamar(cfg: ConfigIA, sis: Sistema | string, msgs: Msg[]): Promis
   const sistema = variavel ? `${fixo}\n\n${variavel}` : fixo;
   const sinal = AbortSignal.timeout(30_000);
   if (cfg.provedor === "openai") {
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    const r = await fetch(urlIA(cfg, "/chat/completions"), {
       method: "POST",
       signal: sinal,
       headers: { "content-type": "application/json", authorization: `Bearer ${cfg.chave}` },
@@ -68,10 +68,10 @@ async function chamar(cfg: ConfigIA, sis: Sistema | string, msgs: Msg[]): Promis
     }
     if (!juntas.length || juntas[0].role !== "user") juntas.unshift({ role: "user", content: "(o cliente iniciou a conversa)" });
     if (juntas[juntas.length - 1].role !== "user") juntas.push({ role: "user", content: "(o cliente ainda não respondeu; continue a conversa)" });
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const r = await fetch(urlIA(cfg, "/messages"), {
       method: "POST",
       signal: sinal,
-      headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
+      headers: cabecalhosAnthropic(cfg),
       body: JSON.stringify({
         model: cfg.modelo,
         max_tokens: LIMITE_TOKENS,
@@ -150,8 +150,21 @@ function montarSistema(c: Contato, b: Config): Sistema {
   return { fixo, variavel };
 }
 
+/** Endereço da API: o oficial, ou o que você configurou (um gateway compatível). */
+export function urlIA(cfg: { provedor: string; endereco?: string | null }, caminho: string) {
+  const base = (cfg.endereco || "").trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+  if (base) return `${base}/v1${caminho}`;
+  return `${cfg.provedor === "openai" ? "https://api.openai.com" : "https://api.anthropic.com"}/v1${caminho}`;
+}
+/** Cabeçalhos do Claude: a Anthropic usa x-api-key; gateways costumam usar Bearer — com endereço próprio vão os dois. */
+export function cabecalhosAnthropic(cfg: { chave: string; endereco?: string | null }) {
+  const h: Record<string, string> = { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" };
+  if (cfg.endereco) h.authorization = `Bearer ${cfg.chave}`;
+  return h;
+}
+
 export async function configIA(db: SupabaseClient, donoId: string): Promise<ConfigIA | null> {
-  const { data } = await db.from("ia_config").select("provedor, modelo, chave").eq("dono_id", donoId).maybeSingle();
+  const { data } = await db.from("ia_config").select("provedor, modelo, chave, endereco").eq("dono_id", donoId).maybeSingle();
   return data ? (data as ConfigIA) : null;
 }
 
@@ -254,10 +267,10 @@ export async function lerComprovante(db: SupabaseClient, donoId: string, contato
       const bloco = pdf
         ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
         : { type: "image", source: { type: "base64", media_type: mime, data: base64 } };
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
+      const r = await fetch(urlIA(cfg, "/messages"), {
         method: "POST",
         signal: sinal,
-        headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
+        headers: cabecalhosAnthropic(cfg),
         body: JSON.stringify({ model: cfg.modelo, max_tokens: 800, messages: [{ role: "user", content: [bloco, { type: "text", text: PEDIDO_COMPROVANTE }] }] }),
       });
       const j = await r.json().catch(() => ({}));
@@ -267,7 +280,7 @@ export async function lerComprovante(db: SupabaseClient, donoId: string, contato
       saida = j.usage?.output_tokens ?? 0;
     } else {
       if (pdf) return { erro: "a OpenAI não lê PDF por aqui (peça o print do comprovante)" };
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      const r = await fetch(urlIA(cfg, "/chat/completions"), {
         method: "POST",
         signal: sinal,
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.chave}` },

@@ -9,7 +9,7 @@ import { AtendenteDesdeInicio } from "./AtendenteDesdeInicio";
 import { MinhaVoz } from "./MinhaVoz";
 
 type Provedor = "openai" | "anthropic" | "gemini";
-type Status = { configurada: boolean; provedor: Provedor | null; modelo: string | null; final_chave: string | null; padroes: Record<Provedor, string> };
+type Status = { configurada: boolean; provedor: Provedor | null; modelo: string | null; endereco?: string | null; final_chave: string | null; padroes: Record<Provedor, string> };
 
 const PROVEDORES: { v: Provedor; nome: string; empresa: string; ondeChave: string; link: string; sugestoes: string[]; dica: string }[] = [
   {
@@ -65,6 +65,7 @@ export function IaCliente() {
   const [provedor, setProvedor] = useState<Provedor>("openai");
   const [modelo, setModelo] = useState("");
   const [chave, setChave] = useState("");
+  const [endereco, setEndereco] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
@@ -77,6 +78,7 @@ export function IaCliente() {
       if (s.provedor) {
         setProvedor(s.provedor);
         setModelo(s.modelo ?? "");
+        setEndereco(s.endereco ?? "");
       }
     } catch (e) {
       setErro((e as Error).message);
@@ -109,7 +111,7 @@ export function IaCliente() {
     setOk(false);
     setSalvando(true);
     try {
-      await chamar({ acao: "salvar", provedor, modelo: modelo.trim() || status?.padroes?.[provedor] || atual.sugestoes[0], chave });
+      await chamar({ acao: "salvar", provedor, modelo: modelo.trim() || status?.padroes?.[provedor] || atual.sugestoes[0], chave, endereco: provedor === "gemini" ? "" : endereco.trim() });
       setChave("");
       setEditando(false);
       setOk(true);
@@ -144,7 +146,7 @@ export function IaCliente() {
           <span className="h-2.5 w-2.5 rounded-full bg-limao" />
           <span className="font-semibold text-limao">IA ligada</span>
           <span className="text-texto">
-            {nomeAtual?.nome} ({nomeAtual?.empresa}) · <code className="text-[13px]">{status.modelo}</code> · chave ••••{status.final_chave}
+            {nomeAtual?.nome} ({nomeAtual?.empresa}) · <code className="text-[13px]">{status.modelo}</code> · {status.endereco ? <>via <code className="text-[13px]">{status.endereco.replace(/^https:\/\//, "")}</code> · </> : null}chave ••••{status.final_chave}
           </span>
           <span className="ml-auto flex gap-2">
             <button type="button" onClick={() => setEditando(true)} className="min-h-9 rounded-lg px-3 text-xs text-texto hover:bg-elevado">
@@ -219,6 +221,23 @@ export function IaCliente() {
                 </span>
               </label>
             </div>
+
+            {provedor !== "gemini" && (
+              <label className="flex flex-col gap-1.5 text-[13px] text-suave">
+                Endereço da API (opcional)
+                <input
+                  className={inputCls}
+                  value={endereco}
+                  onChange={(e) => setEndereco(e.target.value)}
+                  placeholder={provedor === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"}
+                  autoComplete="off"
+                  inputMode="url"
+                />
+                <span className="text-[11px]">
+                  Deixe vazio para usar a API oficial. Preencha só se usar um gateway compatível (ex.: https://api.mwapi.dev). Atenção: todas as conversas dos clientes passam por esse servidor.
+                </span>
+              </label>
+            )}
 
             {erro && <p className="text-sm text-vermelho">{erro}</p>}
 

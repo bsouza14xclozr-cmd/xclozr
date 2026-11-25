@@ -106,9 +106,9 @@ async function rotaIA(req: Request) {
   if (!donoId) return json({ erro: "não autenticado" }, 401);
   const corpo = await req.json().catch(() => ({}));
   const acao = String(corpo.acao ?? "status");
-  const { data: atual } = await db.from("ia_config").select("provedor, modelo, chave").eq("dono_id", donoId).maybeSingle();
+  const { data: atual } = await db.from("ia_config").select("provedor, modelo, chave, endereco").eq("dono_id", donoId).maybeSingle();
   if (acao === "status") {
-    return json({ configurada: Boolean(atual), provedor: atual?.provedor ?? null, modelo: atual?.modelo ?? null, final_chave: atual?.chave ? atual.chave.slice(-4) : null, padroes: MODELO_PADRAO });
+    return json({ configurada: Boolean(atual), provedor: atual?.provedor ?? null, modelo: atual?.modelo ?? null, endereco: atual?.endereco ?? null, final_chave: atual?.chave ? atual.chave.slice(-4) : null, padroes: MODELO_PADRAO });
   }
   if (acao === "apagar") {
     await db.from("ia_config").delete().eq("dono_id", donoId);
@@ -120,12 +120,24 @@ async function rotaIA(req: Request) {
     const modelo = String(corpo.modelo ?? "").trim() || MODELO_PADRAO[provedor];
     const chave = String(corpo.chave ?? "").trim() || (atual?.provedor === provedor ? atual.chave : "");
     if (!chave) return json({ erro: "Cole a chave de API." }, 400);
-    try {
-      await testarIA({ provedor, modelo, chave });
-    } catch (e) {
-      return json({ erro: `A ${provedor === "openai" ? "OpenAI" : provedor === "anthropic" ? "Anthropic" : "Google"} recusou: ${(e as Error).message}`.slice(0, 300) }, 400);
+    // endereço próprio (gateway compatível com a API do Claude ou da OpenAI); vazio = oficial
+    let endereco: string | null = String(corpo.endereco ?? "").trim().replace(/\/+$/, "") || null;
+    if (provedor === "gemini") endereco = null;
+    if (endereco) {
+      let u: URL;
+      try {
+        u = new URL(endereco);
+      } catch {
+        return json({ erro: "Endereço da API inválido. Ex.: https://api.exemplo.com" }, 400);
+      }
+      if (u.protocol !== "https:" || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(u.hostname)) return json({ erro: "O endereço precisa ser https e público." }, 400);
     }
-    const { error } = await db.from("ia_config").upsert({ dono_id: donoId, provedor, modelo, chave, atualizado_em: new Date().toISOString() });
+    try {
+      await testarIA({ provedor, modelo, chave, endereco });
+    } catch (e) {
+      return json({ erro: `${endereco ? `O endereço ${new URL(endereco).host}` : `A ${provedor === "openai" ? "OpenAI" : provedor === "anthropic" ? "Anthropic" : "Google"}`} recusou: ${(e as Error).message}`.slice(0, 300) }, 400);
+    }
+    const { error } = await db.from("ia_config").upsert({ dono_id: donoId, provedor, modelo, chave, endereco, atualizado_em: new Date().toISOString() });
     if (error) return json({ erro: "Não consegui salvar." }, 500);
     return json({ ok: true, provedor, modelo, final_chave: chave.slice(-4) });
   }

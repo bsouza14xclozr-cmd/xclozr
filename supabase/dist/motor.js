@@ -1557,7 +1557,7 @@ async function chamar2(cfg, sis, msgs) {
 ${variavel}` : fixo;
   const sinal = AbortSignal.timeout(3e4);
   if (cfg.provedor === "openai") {
-    const r2 = await fetch("https://api.openai.com/v1/chat/completions", {
+    const r2 = await fetch(urlIA(cfg, "/chat/completions"), {
       method: "POST",
       signal: sinal,
       headers: { "content-type": "application/json", authorization: `Bearer ${cfg.chave}` },
@@ -1584,10 +1584,10 @@ ${m.texto}`;
     }
     if (!juntas.length || juntas[0].role !== "user") juntas.unshift({ role: "user", content: "(o cliente iniciou a conversa)" });
     if (juntas[juntas.length - 1].role !== "user") juntas.push({ role: "user", content: "(o cliente ainda não respondeu; continue a conversa)" });
-    const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+    const r2 = await fetch(urlIA(cfg, "/messages"), {
       method: "POST",
       signal: sinal,
-      headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
+      headers: cabecalhosAnthropic(cfg),
       body: JSON.stringify({
         model: cfg.modelo,
         max_tokens: LIMITE_TOKENS,
@@ -1661,8 +1661,18 @@ OBJETIVO: ${b.objetivo}` : "\nOBJETIVO: tirar as dúvidas e levar o cliente a de
   const variavel = `CLIENTE DESTA CONVERSA: ${nome ? `primeiro nome ${nome}` : "nome desconhecido (não invente um nome)"}${campos ? `; ${campos}` : ""}.`;
   return { fixo, variavel };
 }
+function urlIA(cfg, caminho) {
+  const base2 = (cfg.endereco || "").trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+  if (base2) return `${base2}/v1${caminho}`;
+  return `${cfg.provedor === "openai" ? "https://api.openai.com" : "https://api.anthropic.com"}/v1${caminho}`;
+}
+function cabecalhosAnthropic(cfg) {
+  const h = { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" };
+  if (cfg.endereco) h.authorization = `Bearer ${cfg.chave}`;
+  return h;
+}
 async function configIA(db2, donoId) {
-  const { data } = await db2.from("ia_config").select("provedor, modelo, chave").eq("dono_id", donoId).maybeSingle();
+  const { data } = await db2.from("ia_config").select("provedor, modelo, chave, endereco").eq("dono_id", donoId).maybeSingle();
   return data ? data : null;
 }
 async function responderIA(db2, donoId, c, bloco) {
@@ -1733,10 +1743,10 @@ async function lerComprovante(db2, donoId, contatoId, base64, mime) {
       saida = j2.usageMetadata?.candidatesTokenCount ?? 0;
     } else if (cfg.provedor === "anthropic") {
       const bloco = pdf ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } } : { type: "image", source: { type: "base64", media_type: mime, data: base64 } };
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
+      const r = await fetch(urlIA(cfg, "/messages"), {
         method: "POST",
         signal: sinal,
-        headers: { "content-type": "application/json", "x-api-key": cfg.chave, "anthropic-version": "2023-06-01" },
+        headers: cabecalhosAnthropic(cfg),
         body: JSON.stringify({ model: cfg.modelo, max_tokens: 800, messages: [{ role: "user", content: [bloco, { type: "text", text: PEDIDO_COMPROVANTE }] }] })
       });
       const j2 = await r.json().catch(() => ({}));
@@ -1746,7 +1756,7 @@ async function lerComprovante(db2, donoId, contatoId, base64, mime) {
       saida = j2.usage?.output_tokens ?? 0;
     } else {
       if (pdf) return { erro: "a OpenAI não lê PDF por aqui (peça o print do comprovante)" };
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      const r = await fetch(urlIA(cfg, "/chat/completions"), {
         method: "POST",
         signal: sinal,
         headers: { "content-type": "application/json", authorization: `Bearer ${cfg.chave}` },
@@ -2237,9 +2247,9 @@ async function rotaIA(req) {
   if (!donoId) return json({ erro: "não autenticado" }, 401);
   const corpo = await req.json().catch(() => ({}));
   const acao = String(corpo.acao ?? "status");
-  const { data: atual } = await db.from("ia_config").select("provedor, modelo, chave").eq("dono_id", donoId).maybeSingle();
+  const { data: atual } = await db.from("ia_config").select("provedor, modelo, chave, endereco").eq("dono_id", donoId).maybeSingle();
   if (acao === "status") {
-    return json({ configurada: Boolean(atual), provedor: atual?.provedor ?? null, modelo: atual?.modelo ?? null, final_chave: atual?.chave ? atual.chave.slice(-4) : null, padroes: MODELO_PADRAO });
+    return json({ configurada: Boolean(atual), provedor: atual?.provedor ?? null, modelo: atual?.modelo ?? null, endereco: atual?.endereco ?? null, final_chave: atual?.chave ? atual.chave.slice(-4) : null, padroes: MODELO_PADRAO });
   }
   if (acao === "apagar") {
     await db.from("ia_config").delete().eq("dono_id", donoId);
@@ -2251,12 +2261,23 @@ async function rotaIA(req) {
     const modelo = String(corpo.modelo ?? "").trim() || MODELO_PADRAO[provedor];
     const chave = String(corpo.chave ?? "").trim() || (atual?.provedor === provedor ? atual.chave : "");
     if (!chave) return json({ erro: "Cole a chave de API." }, 400);
-    try {
-      await testarIA({ provedor, modelo, chave });
-    } catch (e) {
-      return json({ erro: `A ${provedor === "openai" ? "OpenAI" : provedor === "anthropic" ? "Anthropic" : "Google"} recusou: ${e.message}`.slice(0, 300) }, 400);
+    let endereco = String(corpo.endereco ?? "").trim().replace(/\/+$/, "") || null;
+    if (provedor === "gemini") endereco = null;
+    if (endereco) {
+      let u;
+      try {
+        u = new URL(endereco);
+      } catch {
+        return json({ erro: "Endereço da API inválido. Ex.: https://api.exemplo.com" }, 400);
+      }
+      if (u.protocol !== "https:" || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(u.hostname)) return json({ erro: "O endereço precisa ser https e público." }, 400);
     }
-    const { error } = await db.from("ia_config").upsert({ dono_id: donoId, provedor, modelo, chave, atualizado_em: (/* @__PURE__ */ new Date()).toISOString() });
+    try {
+      await testarIA({ provedor, modelo, chave, endereco });
+    } catch (e) {
+      return json({ erro: `${endereco ? `O endereço ${new URL(endereco).host}` : `A ${provedor === "openai" ? "OpenAI" : provedor === "anthropic" ? "Anthropic" : "Google"}`} recusou: ${e.message}`.slice(0, 300) }, 400);
+    }
+    const { error } = await db.from("ia_config").upsert({ dono_id: donoId, provedor, modelo, chave, endereco, atualizado_em: (/* @__PURE__ */ new Date()).toISOString() });
     if (error) return json({ erro: "Não consegui salvar." }, 500);
     return json({ ok: true, provedor, modelo, final_chave: chave.slice(-4) });
   }
