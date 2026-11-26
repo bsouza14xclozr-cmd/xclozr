@@ -159,8 +159,8 @@ export function criarEnvioEvolution(db: SupabaseClient, cfg: Record<string, stri
           mediatype: s.tipo === "arquivo" ? "document" : s.tipo === "imagem" ? "image" : s.tipo,
           media: s.url,
           caption: "legenda" in s ? s.legenda : undefined,
-          fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : undefined,
-          mimetype: s.tipo === "arquivo" ? mimeDe(s.url) : undefined,
+          fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : !/^https?:/.test(s.url) ? "pix.png" : undefined,
+          mimetype: s.tipo === "arquivo" ? mimeDe(s.url) : !/^https?:/.test(s.url) ? "image/png" : undefined, // imagem em base64 (QR Code do Pix)
           delay,
         };
       }

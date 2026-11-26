@@ -410,6 +410,7 @@ export const BLOCOS: Record<TipoBloco, BlocoDef> = {
         rotulo: "📋 Enviar com botão “Copiar código Pix”",
         dica: "O cliente toca no botão e cola no app do banco. O código em texto vai logo abaixo, caso o botão não apareça no celular dele. A confirmação do pagamento continua automática.",
       },
+      { tipo: "booleano", chave: "enviarQr", rotulo: "🔳 Mandar também a imagem do QR Code", dica: "Vai logo depois do copia e cola (só no gateway Asaas). Bom para quem paga pelo celular de outra pessoa ou pelo computador." },
       {
         tipo: "select",
         chave: "modoPix",

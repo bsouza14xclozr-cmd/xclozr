@@ -580,6 +580,14 @@ async function executarBloco(ctx: Ctx, c: Contato, funil: Funil, n: No, ultimaMe
         }
         // o código em texto vai sempre (ou como reserva, se o botão não aparecer no aparelho do cliente)
         if (!foiBotao || cfg.codigoTambem !== false) await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: foiBotao ? 1200 : 800 });
+        // QR Code (para quem paga por outro aparelho ou prefere escanear): se a imagem falhar, o copia e cola já foi
+        if (cfg.enviarQr && pix.qrBase64) {
+          try {
+            await enviar(ctx, c, { tipo: "imagem", url: pix.qrBase64, legenda: "Ou escaneie o QR Code 👆", esperaMs: 1200 });
+          } catch (e) {
+            ctx.log?.(`QR Code do Pix não foi: ${(e as Error).message}`);
+          }
+        }
       }
       await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix, bump: bump?.id ?? null } });
       await ctx.store.cancelarAgendamentos(c, ["pix_nao_pagou", "pix_expirou"]);

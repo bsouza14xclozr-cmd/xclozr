@@ -90,7 +90,7 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
         autor: "robo",
         tipo: s.tipo === "botao_copiar" || s.tipo === "botao_pix" ? "texto" : s.tipo,
         conteudo,
-        midia_url: "url" in s ? s.url : null,
+        midia_url: "url" in s && /^https?:/.test(s.url) ? s.url : null,
       });
       await db.from("contatos").update({ ultima_msg_em: new Date().toISOString() }).eq("id", c.id);
     },
@@ -133,7 +133,7 @@ export function criarStore(db: SupabaseClient, donoId: string): Store {
             .from("pagamentos")
             .update({ pix_copia_cola: qr.copiaCola, gateway_id: qr.qrId, verificar_em: new Date(Date.now() + 60_000).toISOString() })
             .eq("id", data.id);
-          return { id: data.id, copiaCola: qr.copiaCola };
+          return { id: data.id, copiaCola: qr.copiaCola, qrBase64: qr.qrBase64 };
         }
         if (gw!.gateway === "livepix") {
           const lp = await criarCobrancaLivePix(db, gw!, donoId, { pagamentoId: data.id, valorCentavos: produto.preco_centavos });

@@ -388,6 +388,13 @@ ${pix.link}`, esperaMs: 800 });
           }
         }
         if (!foiBotao || cfg.codigoTambem !== false) await enviar(ctx, c, { tipo: "texto", texto: pix.copiaCola, esperaMs: foiBotao ? 1200 : 800 });
+        if (cfg.enviarQr && pix.qrBase64) {
+          try {
+            await enviar(ctx, c, { tipo: "imagem", url: pix.qrBase64, legenda: "Ou escaneie o QR Code 👆", esperaMs: 1200 });
+          } catch (e) {
+            ctx.log?.(`QR Code do Pix não foi: ${e.message}`);
+          }
+        }
       }
       await patch(ctx, c, { pix_ativo: { bloco: n.id, pagamento_id: pix.id, funil_id: funil.id, tipo: tipoPix, bump: bump?.id ?? null } });
       await ctx.store.cancelarAgendamentos(c, ["pix_nao_pagou", "pix_expirou"]);
@@ -947,13 +954,14 @@ async function criarPixAsaas(cfg, p) {
     addressKey: cfg.chave_pix,
     description: (p.descricao || "Produto").slice(0, 37),
     value: Math.round(p.valorCentavos) / 100,
-    format: "PAYLOAD",
+    format: "ALL",
+    // código copia e cola + imagem do QR Code
     expirationSeconds: Math.max(300, Math.min(p.expiraMin, 60 * 24 * 7) * 60),
     allowsMultiplePayments: false,
     externalReference: p.pagamentoId
   });
   if (!r.id || !r.payload) throw new Error("o Asaas não devolveu o código Pix");
-  return { qrId: r.id, copiaCola: r.payload };
+  return { qrId: r.id, copiaCola: r.payload, qrBase64: r.encodedImage ?? null };
 }
 async function pixAsaasPago(cfg, qrId, valorCentavos) {
   const r = await asaas(cfg, "GET", `/payments?pixQrCodeId=${encodeURIComponent(qrId)}&limit=10`);
@@ -1141,7 +1149,7 @@ ${s.texto}
         autor: "robo",
         tipo: s.tipo === "botao_copiar" || s.tipo === "botao_pix" ? "texto" : s.tipo,
         conteudo,
-        midia_url: "url" in s ? s.url : null
+        midia_url: "url" in s && /^https?:/.test(s.url) ? s.url : null
       });
       await db2.from("contatos").update({ ultima_msg_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", c.id);
     },
@@ -1174,7 +1182,7 @@ ${s.texto}
         if (gw.gateway === "asaas") {
           const qr = await criarPixAsaas(gw, { pagamentoId: data.id, descricao: produto.nome, valorCentavos: produto.preco_centavos, expiraMin });
           await db2.from("pagamentos").update({ pix_copia_cola: qr.copiaCola, gateway_id: qr.qrId, verificar_em: new Date(Date.now() + 6e4).toISOString() }).eq("id", data.id);
-          return { id: data.id, copiaCola: qr.copiaCola };
+          return { id: data.id, copiaCola: qr.copiaCola, qrBase64: qr.qrBase64 };
         }
         if (gw.gateway === "livepix") {
           const lp = await criarCobrancaLivePix(db2, gw, donoId, { pagamentoId: data.id, valorCentavos: produto.preco_centavos });
@@ -1349,8 +1357,9 @@ function criarEnvioEvolution(db2, cfg) {
           mediatype: s.tipo === "arquivo" ? "document" : s.tipo === "imagem" ? "image" : s.tipo,
           media: s.url,
           caption: "legenda" in s ? s.legenda : void 0,
-          fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : void 0,
-          mimetype: s.tipo === "arquivo" ? mimeDe(s.url) : void 0,
+          fileName: s.tipo === "arquivo" ? nomeComExtensao(s.nome, s.url) : !/^https?:/.test(s.url) ? "pix.png" : void 0,
+          mimetype: s.tipo === "arquivo" ? mimeDe(s.url) : !/^https?:/.test(s.url) ? "image/png" : void 0,
+          // imagem em base64 (QR Code do Pix)
           delay
         };
       }

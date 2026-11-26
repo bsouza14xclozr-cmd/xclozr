@@ -247,13 +247,13 @@ export async function criarPixAsaas(cfg: ConfigGateway, p: { pagamentoId: string
     addressKey: cfg.chave_pix,
     description: (p.descricao || "Produto").slice(0, 37),
     value: Math.round(p.valorCentavos) / 100,
-    format: "PAYLOAD",
+    format: "ALL", // código copia e cola + imagem do QR Code
     expirationSeconds: Math.max(300, Math.min(p.expiraMin, 60 * 24 * 7) * 60),
     allowsMultiplePayments: false,
     externalReference: p.pagamentoId,
   });
   if (!r.id || !r.payload) throw new Error("o Asaas não devolveu o código Pix");
-  return { qrId: r.id, copiaCola: r.payload };
+  return { qrId: r.id, copiaCola: r.payload, qrBase64: r.encodedImage ?? null };
 }
 
 /** Confere no Asaas se o QR Code foi pago (o Asaas cria uma cobrança com o id do QR Code). */
